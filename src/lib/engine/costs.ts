@@ -4,50 +4,70 @@ import { PENALTIES as P } from "../config/penalties";
 import type { Airport } from "../data/airports";
 import { getAirport, haversineKm, travelHours } from "../data/airports";
 import type { Destination } from "../data/destinations";
-import { airlineName, checkedBagFee } from "../data/destinations";
+import { airlineName, checkedBagFee, dayTicketPP } from "../data/destinations";
 import { localHour } from "../dates";
 import type { BagOption, FlightOption, Penalty, StayOption, TravellerGroup } from "../types";
 
 export interface Ground {
   cost: number;
   note: string;
-  extraHours: number;
+  /** Extra hours each way compared with using the home airport. */
+  extraOutHours: number;
+  extraBackHours: number;
 }
 
-/** Estimated cost of getting from home to the airport and back. */
-export function groundCost(group: TravellerGroup, airport: Airport, nights: number): Ground {
+export interface Access {
+  hours: number;
+  extraHours: number;
+  /** One-way public transport cost for everyone. */
+  oneWay: number;
+  roadKm: number;
+}
+
+export function access(group: TravellerGroup, airport: Airport): Access {
   const people = group.adults + group.children;
   const home = getAirport(group.homeAirport)!;
   const start = group.from ?? home;
-  const days = nights + 1;
-  const parking = airport.parkingPerDay * days;
-
-  if (!group.from && airport.code === home.code) {
-    const transit = airport.localReturnPP * people;
-    return transit <= parking
-      ? { cost: transit, note: `Train/bus to ${airport.name} and back`, extraHours: 0 }
-      : { cost: parking, note: `Parking at ${airport.name}, ${days} days`, extraHours: 0 };
-  }
-
-  const hours = travelHours(start, airport);
-  if (hours < 0.4) {
-    const transit = airport.localReturnPP * people;
-    return { cost: Math.min(transit, parking), note: transit <= parking ? `Local transport to ${airport.name}` : `Parking at ${airport.name}`, extraHours: 0 };
-  }
+  const local = !group.from && airport.code === home.code;
+  const hours = local ? 0 : travelHours(start, airport);
+  if (local || hours < 0.4) return { hours: 0, extraHours: 0, oneWay: (airport.localReturnPP / 2) * people, roadKm: 0 };
   const roadKm = haversineKm(start, airport) * 1.25;
-  const rail = (8 + roadKm * 0.22) * people;
-  const car = roadKm * 2 * 0.17 + parking;
   // Hours beyond what the home airport would take count as extra travel.
   const homeHours = group.from ? travelHours(start, home) : 0;
-  const extraHours = Math.max(0, hours - homeHours);
+  return { hours, extraHours: Math.max(0, hours - homeHours), oneWay: (8 + roadKm * 0.22) * 0.6 * people, roadKm };
+}
+
+/** Estimated cost of getting from home to the airport(s) and back. */
+export function groundCost(group: TravellerGroup, outAirport: Airport, backAirport: Airport, nights: number): Ground {
+  const people = group.adults + group.children;
+  const days = nights + 1;
+  const out = access(group, outAirport);
+
+  if (outAirport.code !== backAirport.code) {
+    // Different airports: you can't drive and park, so it's two one-way journeys.
+    const back = access(group, backAirport);
+    const outNote = out.hours === 0 ? `Bus/train to ${outAirport.name}` : `Train to ${outAirport.name} (~${out.hours.toFixed(1)} hrs)`;
+    const backNote = back.hours === 0 ? `home from ${backAirport.name} by bus/train` : `home from ${backAirport.name} (~${back.hours.toFixed(1)} hrs)`;
+    return { cost: out.oneWay + back.oneWay, note: `${outNote}, then ${backNote}`, extraOutHours: out.extraHours, extraBackHours: back.extraHours };
+  }
+
+  const parking = outAirport.parkingPerDay * days;
+  const transit = out.oneWay * 2;
+  if (out.hours === 0) {
+    return transit <= parking
+      ? { cost: transit, note: `Train/bus to ${outAirport.name} and back`, extraOutHours: 0, extraBackHours: 0 }
+      : { cost: parking, note: `Parking at ${outAirport.name}, ${days} days`, extraOutHours: 0, extraBackHours: 0 };
+  }
+  const rail = (8 + out.roadKm * 0.22) * people;
+  const car = out.roadKm * 2 * 0.17 + parking;
   return rail <= car
-    ? { cost: rail, note: `Train to ${airport.name} (~${hours.toFixed(1)} hrs each way)`, extraHours }
-    : { cost: car, note: `Drive to ${airport.name} (~${Math.round(roadKm)} km) + ${days} days parking`, extraHours };
+    ? { cost: rail, note: `Train to ${outAirport.name} and back (~${out.hours.toFixed(1)} hrs each way)`, extraOutHours: out.extraHours, extraBackHours: out.extraHours }
+    : { cost: car, note: `Drive to ${outAirport.name} (~${Math.round(out.roadKm)} km) + ${days} days parking`, extraOutHours: out.extraHours, extraBackHours: out.extraHours };
 }
 
 export function bagCost(flight: FlightOption, bags: BagOption, people: number): number {
   if (bags === "cabin") return 0;
-  return checkedBagFee(flight.airline) * 2 * people;
+  return (checkedBagFee(flight.airline) + checkedBagFee(flight.returnAirline)) * people;
 }
 
 function fmtTime(h: number): string {
@@ -61,7 +81,7 @@ export interface FlightAssessment {
   flags: string[];
 }
 
-export function assessFlight(flight: FlightOption, dest: Destination, people: number, extraHours: number): FlightAssessment {
+export function assessFlight(flight: FlightOption, dest: Destination, people: number, ground: Ground): FlightAssessment {
   const penalties: Penalty[] = [];
   const flags: string[] = [];
   const add = (label: string, amount: number) => amount > 0 && penalties.push({ label, amount: Math.round(amount) });
@@ -99,7 +119,9 @@ export function assessFlight(flight: FlightOption, dest: Destination, people: nu
     add("Self-transfer (separate tickets)", P.selfTransferPP * people);
     flags.push("Self-transfer: missed connection risk");
   }
-  if (extraHours > 0.1) add(`Extra ${extraHours.toFixed(1)} hrs travel each way to the airport`, extraHours * 2 * P.extraTravelHourPP * people);
+  if (ground.extraOutHours > 0.1) add(`Extra ${ground.extraOutHours.toFixed(1)} hrs getting to the airport`, ground.extraOutHours * P.extraTravelHourPP * people);
+  if (ground.extraBackHours > 0.1)
+    add(`Extra ${ground.extraBackHours.toFixed(1)} hrs getting home`, ground.extraBackHours * P.extraTravelHourPP * P.returnTravelMultiplier * people);
 
   // Time lost at the destination on the first and last days.
   const lostArrive = late(outArr) ? 12 : Math.max(0, outArr - P.arriveByHour);
@@ -110,15 +132,22 @@ export function assessFlight(flight: FlightOption, dest: Destination, people: nu
   return { penalties, flags };
 }
 
-export function assessStay(stay: StayOption, nights: number): Penalty[] {
+/** Day tickets into the centre for a stay too far out to walk, all travellers. */
+export function stayTransportCost(stay: StayOption, destCode: string, nights: number, people: number): number {
+  if (stay.centreMins === null || stay.centreMins <= P.walkableMins) return 0;
+  return Math.round(dayTicketPP(destCode) * people * nights);
+}
+
+export function assessStay(stay: StayOption, nights: number, people: number): Penalty[] {
   const out: Penalty[] = [];
   if (stay.rating !== null && stay.rating < P.ratingReference) {
     out.push({ label: `Rated ${stay.rating}/10`, amount: Math.round((P.ratingReference - stay.rating) * P.perRatingPointPerNight * nights) });
   }
   if (stay.centreMins !== null && stay.centreMins > P.centreFreeMins) {
+    const hours = ((stay.centreMins - P.centreFreeMins) * 2 * nights) / 60;
     out.push({
-      label: `${stay.centreMins} mins from the centre`,
-      amount: Math.round((stay.centreMins - P.centreFreeMins) * P.perCentreMinutePerNight * nights),
+      label: `${stay.centreMins} mins from the centre (~${Math.round((stay.centreMins * 2 * nights) / 60)} hrs travelling over the trip)`,
+      amount: Math.round(hours * P.commuteHourPP * people),
     });
   }
   return out.filter((p) => p.amount > 0);

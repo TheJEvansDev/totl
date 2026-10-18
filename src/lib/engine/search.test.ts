@@ -45,7 +45,7 @@ test("flexible dates expand around the chosen dates", () => {
 });
 
 test("nearby airports from Manchester include Liverpool and Leeds", () => {
-  const codes = candidateAirports({ id: "g", homeAirport: "MAN", extraAirports: [], nearbyHours: 2, adults: 1, children: 0 }).map((a) => a.code);
+  const codes = candidateAirports({ id: "g", homeAirport: "MAN", extraAirports: [], nearbyHours: 2, mixAirports: true, returnTo: "", adults: 1, children: 0 }).map((a) => a.code);
   assert.equal(codes[0], "MAN");
   assert.ok(codes.includes("LPL"));
   assert.ok(codes.includes("LBA"));
@@ -144,4 +144,122 @@ test("sample accommodation has options matching the default filters in every cit
     if (r.length === 0) empty.push(d.code);
   }
   assert.deepEqual(empty, []);
+});
+
+test("can fly out of one airport and home into another", async () => {
+  const parsed = parseRequest(
+    request({
+      groups: [{ homeAirport: "BRS", extraAirports: ["STN", "LGW"], nearbyHours: 0, adults: 2 }],
+      destination: { mode: "cities", cities: ["BCN", "AMS"] },
+    }),
+  );
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, providers);
+  // Every trip shows the other airport pairs it compared, including mixed ones.
+  const options = res.trips.flatMap((t) => t.airportOptions);
+  const mixedOption = options.find((o) => o.out !== o.back);
+  assert.ok(mixedOption, "mixed airport pairs are compared");
+  assert.ok(mixedOption.returnBookingUrl, "separate return booking link");
+
+  // Asking to fly home into Bristol only returns trips that land there.
+  const homeBrs = parseRequest(
+    request({
+      groups: [{ homeAirport: "BRS", extraAirports: ["STN", "LGW"], returnTo: "BRS", adults: 2 }],
+      destination: { mode: "cities", cities: ["BCN", "AMS"] },
+    }),
+  );
+  assert.ok(homeBrs.ok);
+  const resBrs = await runSearch(homeBrs.value, providers);
+  assert.ok(resBrs.trips.length > 0);
+  assert.ok(resBrs.trips.every((t) => t.legs[0].flight.returnAirport === "BRS"));
+  const mixed = resBrs.trips.find((t) => t.legs[0].flight.origin !== "BRS");
+  assert.ok(mixed, "some trips fly out of London and home into Bristol");
+  assert.ok(mixed.costs.some((c) => c.label.includes("two one-way tickets")));
+  console.log("mixed:", mixed.legs[0].flight.origin, "→", mixed.legs[0].flight.returnAirport, "|", mixed.why, "|", mixed.legs[0].groundNote);
+
+  const off = parseRequest(request({ groups: [{ homeAirport: "BRS", extraAirports: ["STN"], mixAirports: false, adults: 2 }] }));
+  assert.ok(off.ok);
+  const resOff = await runSearch(off.value, providers);
+  assert.ok(resOff.trips.every((t) => t.legs[0].flight.returnAirport === t.legs[0].flight.origin));
+});
+
+test("accommodation comparison lists further-out options with pros and cons", async () => {
+  const parsed = parseRequest(request({ destination: { mode: "cities", cities: ["AMS"] } }));
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, providers);
+  const withAlts = res.trips.filter((t) => t.stayAlternatives.length > 1);
+  assert.ok(withAlts.length > 0);
+  const t = withAlts[0];
+  assert.equal(t.stayAlternatives[0].label, "Chosen");
+  assert.ok(t.stay.centreMins === null || t.stay.centreMins <= 20, "chosen stay respects the filter");
+  const further = res.trips.flatMap((x) => x.stayAlternatives).find((a) => a.label === "Further out");
+  assert.ok(further, "a further-out option is offered");
+  assert.ok(further.cons.some((c) => c.includes("mins each way")));
+  console.log("further out:", further.stay.name, further.stay.centreMins, "mins, net", further.netVsChosen, "|", further.pros.concat(further.cons).join("; "));
+});
+
+test("flags deals well below the typical price", async () => {
+  const parsed = parseRequest(
+    request({
+      groups: [{ homeAirport: "MAN", nearbyHours: 2, adults: 1 }],
+      destination: { mode: "anywhere", maxPerPerson: 2000 },
+      dates: { mode: "window", from: start, to: addDays(start, 40), minNights: 2, maxNights: 5, weekendsOnly: false },
+    }),
+  );
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, providers);
+  const deals = res.trips.filter((t) => t.deal);
+  assert.ok(deals.length > 0, "sample data includes some deals");
+  for (const d of deals) assert.ok(d.flags[0].includes("below typical"));
+  console.log("deals:", deals.length, deals.slice(0, 3).map((d) => `${d.destination} ${d.deal!.kind} ${d.deal!.pctBelow}%`).join(", "), "| took", res.meta.tookMs, "ms");
+});
+
+test("suggests compromises that save money against the top trip", async () => {
+  const parsed = parseRequest(request({ destination: { mode: "cities", cities: ["AMS", "BCN"] }, bags: "checked" }));
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, providers);
+  assert.ok(res.compromises.length > 0);
+  for (const c of res.compromises) assert.ok(c.saving >= 15);
+  assert.ok(res.compromises.some((c) => c.label.includes("cabin bags")));
+  const ids = new Set(res.trips.map((t) => t.id));
+  for (const c of res.compromises) if (c.tripId) assert.ok(ids.has(c.tripId));
+  console.log("compromises:", res.compromises.map((c) => `${c.label} (£${c.saving})`).join("; "));
+});
+
+test("an AI plan becomes a valid search", async () => {
+  const { planToRequest } = await import("../../components/PlanBox");
+  const { defaultRequest } = await import("../../components/SearchForm");
+  const plan = {
+    summary: "Two of you from Bristol, somewhere warm in March for 4-5 nights, about £350 each",
+    assumptions: [],
+    homeAirport: "BRS",
+    extraAirports: ["STN", "XXX"],
+    nearbyHours: 2,
+    returnTo: "BRS",
+    destinationMode: "cities" as const,
+    cities: ["AGP", "FAO", "TCI", "NOPE"],
+    maxPerPerson: 350,
+    dateMode: "window" as const,
+    from: start,
+    to: addDays(start, 30),
+    minNights: 4,
+    maxNights: 5,
+    weekendsOnly: false,
+    flexDays: 0,
+    adults: 2,
+    children: 0,
+    checkedBag: false,
+    stayType: "apartment" as const,
+    minRating: 0,
+    maxCentreMins: 0,
+  };
+  const req = planToRequest(plan, defaultRequest("MAN"));
+  assert.equal(req.groups[0].homeAirport, "BRS");
+  assert.deepEqual(req.groups[0].extraAirports, ["STN"]);
+  assert.deepEqual(req.destination, { mode: "cities", cities: ["AGP", "FAO", "TCI"] });
+  assert.equal(req.stay.minRating, 7.5);
+  const parsed = parseRequest(req);
+  assert.ok(parsed.ok, parsed.ok ? "" : parsed.error);
+  const res = await runSearch(parsed.value, providers);
+  assert.ok(res.trips.length > 0);
 });

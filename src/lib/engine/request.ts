@@ -44,6 +44,8 @@ export function parseRequest(raw: unknown): Parsed<SearchRequest> {
       homeAirport: home.code,
       extraAirports: extras.slice(0, LIMITS.maxAirportsPerGroup),
       nearbyHours: num(gr.nearbyHours, 0, 4, 0),
+      mixAirports: gr.mixAirports !== false,
+      returnTo: getAirport(String(gr.returnTo ?? ""))?.code ?? "",
       from: validFrom,
       adults,
       children,

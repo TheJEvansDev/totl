@@ -2,26 +2,14 @@ import { NextResponse } from "next/server";
 import { parseRequest } from "@/lib/engine/request";
 import { SearchError, runSearch } from "@/lib/engine/search";
 import { getProviders } from "@/lib/providers";
+import { createLimiter } from "@/lib/ratelimit";
 
 export const maxDuration = 30;
 
-// Simple per-IP limit to protect free API quotas. Per server instance only.
-const WINDOW_MS = 60_000;
-const MAX_PER_WINDOW = 12;
-const hits = new Map<string, number[]>();
-
-function limited(ip: string): boolean {
-  const now = Date.now();
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
-  recent.push(now);
-  hits.set(ip, recent);
-  if (hits.size > 5000) hits.clear();
-  return recent.length > MAX_PER_WINDOW;
-}
+const limited = createLimiter(12);
 
 export async function POST(req: Request) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
-  if (limited(ip)) {
+  if (limited(req)) {
     return NextResponse.json({ error: "Too many searches in a minute. Give it a moment and try again." }, { status: 429 });
   }
   let body: unknown;

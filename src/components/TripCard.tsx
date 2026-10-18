@@ -6,7 +6,9 @@ import { airlineName } from "@/lib/data/destinations";
 import type { Trip } from "@/lib/types";
 
 export function flagTone(flag: string): string {
-  if (flag === "Free cancellation") return "tag tag-good";
+  if (flag.startsWith("Possible error fare")) return "tag tag-hot";
+  if (flag.startsWith("Deal:") || flag.startsWith("Stay further out")) return "tag tag-deal";
+  if (flag === "Free cancellation" || flag.startsWith("Back into")) return "tag tag-good";
   if (/Early|Lands|Home|Self-transfer|stop|No rooms/.test(flag)) return "tag tag-warn";
   return "tag";
 }
@@ -16,6 +18,8 @@ export function TripCard({ trip, rank, onOpen }: { trip: Trip; rank: number; onO
   const f = leg.flight;
   const tz = destTz(trip.destination);
   const stops = f.outStops + f.retStops;
+  const outName = getAirport(f.origin)?.name ?? f.origin;
+  const backName = getAirport(f.returnAirport)?.name ?? f.returnAirport;
   return (
     <button type="button" className="card trip" onClick={onOpen}>
       <div className="trip-top">
@@ -38,7 +42,8 @@ export function TripCard({ trip, rank, onOpen }: { trip: Trip; rank: number; onO
       <div className="trip-why">{trip.why}</div>
       <div className="trip-line">
         <span>
-          ✈ {getAirport(leg.airport)?.name ?? leg.airport} · {airlineName(f.airline)} · {time(f.outDepart, "Europe/London")} out,{" "}
+          ✈ {outName === backName ? outName : `Out of ${outName}, home into ${backName}`} · {airlineName(f.airline)}
+          {f.returnAirline !== f.airline ? ` / ${airlineName(f.returnAirline)}` : ""} · {time(f.outDepart, "Europe/London")} out,{" "}
           {time(f.retDepart, tz)} back · {stops === 0 ? "direct" : `${stops} stop${stops > 1 ? "s" : ""}`}
         </span>
       </div>
@@ -51,7 +56,7 @@ export function TripCard({ trip, rank, onOpen }: { trip: Trip; rank: number; onO
       </div>
       {trip.flags.length > 0 && (
         <div className="tags">
-          {trip.flags.map((fl) => (
+          {trip.flags.filter((fl) => !fl.startsWith("Back into")).map((fl) => (
             <span key={fl} className={flagTone(fl)}>{fl}</span>
           ))}
         </div>

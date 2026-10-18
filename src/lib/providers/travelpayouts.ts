@@ -9,9 +9,9 @@ import type { Destination } from "../data/destinations";
 import { getDestination } from "../data/destinations";
 import { daysBetween, localDate } from "../dates";
 import { travelpayoutsUrl } from "../links";
-import type { FlightOption } from "../types";
+import type { FlightOption, OneWayFlight } from "../types";
 import { TtlCache, mapLimit } from "../util";
-import type { FlightProvider, FlightQuery } from "./types";
+import type { FlightProvider, FlightQuery, OneWayQuery } from "./types";
 
 const API = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates";
 const CACHE_TTL_MS = 6 * 3_600_000;
@@ -27,6 +27,7 @@ interface TpTicket {
   return_at?: string;
   transfers?: number;
   return_transfers?: number;
+  duration?: number;
   duration_to?: number;
   duration_back?: number;
   link?: string;
@@ -51,14 +52,14 @@ function monthsBetween(from: string, to: string): string[] {
   return months;
 }
 
-async function fetchMonth(token: string, origin: string, destination: string | null, month: string): Promise<TpTicket[]> {
-  const key = `${origin}|${destination ?? "*"}|${month}`;
+async function fetchMonth(token: string, origin: string, destination: string | null, month: string, oneWay = false): Promise<TpTicket[]> {
+  const key = `${origin}|${destination ?? "*"}|${month}|${oneWay ? "ow" : "rt"}`;
   return cache.get(key, async () => {
     const url = new URL(API);
     url.searchParams.set("origin", origin);
     if (destination) url.searchParams.set("destination", destination);
     url.searchParams.set("departure_at", month);
-    url.searchParams.set("one_way", "false");
+    url.searchParams.set("one_way", String(oneWay));
     url.searchParams.set("direct", "false");
     url.searchParams.set("unique", "false");
     url.searchParams.set("sorting", "price");
@@ -97,9 +98,11 @@ function toOption(t: TpTicket, q: FlightQuery, dest: Destination, marker?: strin
     id: `tp-${q.origin.code}-${dest.code}-${t.airline}-${outDepart}-${retDepart}`,
     source: "travelpayouts",
     origin: q.origin.code,
+    returnAirport: q.origin.code,
     destination: dest.code,
     destinationAirport: t.destination_airport ?? dest.code,
     airline: t.airline,
+    returnAirline: t.airline,
     departDate,
     returnDate,
     outDepart,
@@ -115,6 +118,7 @@ function toOption(t: TpTicket, q: FlightQuery, dest: Destination, marker?: strin
     bookingUrl: t.link
       ? travelpayoutsUrl(t.link, marker)
       : travelpayoutsUrl(`/search/${q.origin.code}`, marker),
+    returnBookingUrl: null,
     seenHoursAgo: null,
   };
 }
@@ -124,6 +128,17 @@ export function travelpayoutsFlights(token: string, marker?: string): FlightProv
     id: "travelpayouts",
     label: "Travelpayouts (cached prices from the last ~48 hours)",
     sample: false,
+    async searchOneWay(q: OneWayQuery): Promise<OneWayFlight[]> {
+      const uk = q.airport.cityCode ?? q.airport.code;
+      const months = monthsBetween(q.dateFrom, q.dateTo);
+      const jobs = q.destinations.flatMap((d) => months.map((month) => ({ d, month })));
+      const batches = await mapLimit(jobs, 4, async ({ d, month }) => {
+        const [origin, destination] = q.direction === "out" ? [uk, d.code] : [d.code, uk];
+        const tickets = await fetchMonth(token, origin, destination, month, true);
+        return tickets.map((t) => toOneWay(t, q, d, marker)).filter((o): o is OneWayFlight => o !== null);
+      });
+      return batches.flat();
+    },
     async search(q: FlightQuery): Promise<FlightOption[]> {
       const origin = q.origin.cityCode ?? q.origin.code;
       // Returns can fall in the month after the last departure.
@@ -152,5 +167,33 @@ export function travelpayoutsFlights(token: string, marker?: string): FlightProv
   };
 }
 
+function toOneWay(t: TpTicket, q: OneWayQuery, dest: Destination, marker?: string): OneWayFlight | null {
+  if (!t.price || !t.departure_at || !t.airline) return null;
+  const ukAirport = q.direction === "out" ? t.origin_airport : t.destination_airport;
+  if (ukAirport && ukAirport !== q.airport.code) return null;
+  const tz = q.direction === "out" ? "Europe/London" : dest.tz;
+  const depart = new Date(t.departure_at).toISOString();
+  const date = localDate(depart, tz);
+  if (date < q.dateFrom || date > q.dateTo) return null;
+  const dur = t.duration_to ?? t.duration ?? dest.flightMins;
+  const stops = t.transfers ?? 0;
+  const [from, to] = q.direction === "out" ? [q.airport.code, dest.code] : [dest.code, q.airport.code];
+  return {
+    id: `tp-ow-${from}-${to}-${t.airline}-${depart}`,
+    source: "travelpayouts",
+    from,
+    to,
+    airline: t.airline,
+    date,
+    depart,
+    arrive: new Date(Date.parse(depart) + dur * 60000).toISOString(),
+    stops,
+    layoverMins: stops > 0 ? Math.max(45, dur - dest.flightMins - 30) / stops : 0,
+    price: Math.round(t.price),
+    bookingUrl: travelpayoutsUrl(t.link ?? `/search/${from}`, marker),
+    seenHoursAgo: null,
+  };
+}
+
 // Exported for tests.
-export const _internal = { monthsBetween, toOption };
+export const _internal = { monthsBetween, toOption, toOneWay };

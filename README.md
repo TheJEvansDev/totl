@@ -15,8 +15,21 @@ added to the home screen.
   airports, "use my location", a destination list or "anywhere under £X",
   exact/flexible/window dates, weekend-only option, travellers, bags,
   accommodation type, rating and distance filters
+- **Describe your trip** box: type it in plain English ("2 of us from Bristol,
+  somewhere warm in March, £350 each") and Claude fills in the search, listing
+  anything it assumed
+- **Fly out of one airport, home into another:** a clear "Fly home into"
+  choice, e.g. out of Gatwick when it's cheap, back into Bristol. Uses two
+  one-way tickets and costs the train to the far airport. Every trip also
+  shows the other airport combinations it compared
 - **Total-cost engine** with a line-by-line breakdown. Every estimate is
   marked "est."
+- **Deals and possible error fares:** flights well below the typical price for
+  that route in your search, with their own Deals tab
+- **Where to stay, weighed up:** central vs cheapest vs further out, with
+  day-ticket costs included and pros and cons for each
+- **Ways to save:** compromises on the top trip (different dates, a night
+  less, another airport, staying further out, no checked bags, another city)
 - **Best value / Cheapest** sort toggle
 - **"Why this is good value"** line, e.g. "Flying Thu instead of Fri saves £91"
 - **Price calendar** (heatmap) of total trip price by departure date and nights
@@ -37,6 +50,7 @@ prices, clearly labelled on screen. Add keys and it switches automatically:
 | `TRAVELPAYOUTS_TOKEN` | Flight prices | Travelpayouts → Profile → API token |
 | `TRAVELPAYOUTS_MARKER` | Your affiliate ID for booking links | Travelpayouts → Profile (your partner ID) |
 | `LITEAPI_KEY` | Hotel prices | LiteAPI dashboard → API keys (sandbox key is fine to start) |
+| `ANTHROPIC_API_KEY` | "Describe your trip" box (hidden without it) | console.anthropic.com → API keys. Costs roughly 1-3p per description with the default model |
 | `FEEDBACK_WEBHOOK_URL` | Optional: sends feedback to a Discord channel | Discord channel → Edit → Integrations → Webhooks → New webhook → Copy URL |
 
 You can add one at a time. For example, flights become real while
@@ -78,6 +92,15 @@ automatically.
 - Map tiles come from OpenStreetMap, which is fine for testing. Switch to a
   proper tile provider before any real traffic.
 
+## Limits worth knowing
+
+- **Deals** are judged against the other prices in the same search, not a
+  long-term price history. A proper deal feed needs a scanner that runs on a
+  schedule, a database of past prices and alerts (Phase 2).
+- **The AI box** uses Claude Opus 5.5. Switching `MODEL` in
+  `src/lib/ai/plan.ts` to `claude-haiku-5-5` makes it much cheaper, though
+  possibly less accurate on vague requests.
+
 ## Tuning the ranking
 
 All "best value" penalties live in `src/lib/config/penalties.ts`, in pounds,
@@ -99,6 +122,7 @@ Next.js 15 (App Router) + TypeScript, no database.
 
 ```
 src/lib/engine/        total-cost engine, request validation, ranking, explanations
+src/lib/ai/            "describe your trip" planning with Claude
 src/lib/providers/     sample, Travelpayouts (flights), LiteAPI (hotels), estimates
 src/lib/data/          UK airports, destinations, airlines/bag fees
 src/lib/config/        penalties and limits

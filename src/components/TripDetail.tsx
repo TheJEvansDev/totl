@@ -54,7 +54,8 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
       <h3>Flights</h3>
       {trip.legs.map((leg) => {
         const f = leg.flight;
-        const airport = getAirport(leg.airport);
+        const airport = getAirport(f.origin);
+        const backAirport = getAirport(f.returnAirport);
         return (
           <div key={leg.groupId}>
             {multi && <p style={{ fontWeight: 700, margin: "8px 0 0" }}>{leg.groupId}</p>}
@@ -72,7 +73,7 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
             <div className="flight">
               <b>{time(f.retDepart, tz)}</b>
               <span>
-                {dest.name} → {airport?.name} · {airlineName(f.airline)}
+                {dest.name} → {backAirport?.name} · {airlineName(f.returnAirline)}
                 <br />
                 <span className="meta">
                   {shortDate(f.returnDate)} · {duration(f.retDepart, f.retArrive)} · {f.retStops === 0 ? "direct" : `${f.retStops} stop`}
@@ -87,6 +88,32 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
           </div>
         );
       })}
+
+      {trip.airportOptions.length > 1 && (
+        <>
+          <h3>Other airports for these dates</h3>
+          <div className="options">
+            {trip.airportOptions.map((o) => {
+              const chosen = o.out === trip.legs[0].flight.origin && o.back === trip.legs[0].flight.returnAirport;
+              const name = (c: string) => getAirport(c)?.name ?? c;
+              return (
+                <div key={`${o.out}>${o.back}`} className={`option${chosen ? " option-chosen" : ""}`}>
+                  <div className="option-head">
+                    <b>{o.out === o.back ? `${name(o.out)} return` : `Out of ${name(o.out)}, home into ${name(o.back)}`}</b>
+                    <span className="tabular">{chosen ? "Chosen" : o.totalDelta === 0 ? "Same price" : `${o.totalDelta > 0 ? "+" : "−"}${money(Math.abs(o.totalDelta))}`}</span>
+                  </div>
+                  <div className="meta">
+                    {money(o.pricePerPerson)} pp flights · {o.groundNote}
+                    {o.extraHours > 0 ? ` · +${o.extraHours} hrs travel` : ""}
+                  </div>
+                  {o.flags.length > 0 && <div className="meta">{o.flags.join(" · ")}</div>}
+                </div>
+              );
+            })}
+          </div>
+          <p className="fineprint">Prices include flights, bags and getting to and from the airports. Accommodation is the same for each.</p>
+        </>
+      )}
 
       <h3>Accommodation</h3>
       {trip.stayEstimated ? (
@@ -106,13 +133,54 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
         </p>
       )}
 
+      {trip.stayAlternatives.length > 1 && (
+        <>
+          <h3>Where to stay: weighing it up</h3>
+          <div className="options">
+            {trip.stayAlternatives.map((a) => (
+              <div key={a.stay.id} className={`option${a.label === "Chosen" ? " option-chosen" : ""}`}>
+                <div className="option-head">
+                  <b>{a.label === "Chosen" ? "Chosen" : a.label}: {a.stay.name}</b>
+                  <span className="tabular">
+                    {a.label === "Chosen" ? money(a.stay.total + a.transportCost) : `${a.netVsChosen > 0 ? "+" : "−"}${money(Math.abs(a.netVsChosen))}`}
+                  </span>
+                </div>
+                <div className="meta">
+                  {a.stay.rating ? `${a.stay.rating}/10 · ` : ""}
+                  {a.stay.centreMins !== null ? `${a.stay.centreMins} mins to centre · ` : ""}
+                  {money(a.stay.total)}
+                  {a.transportCost > 0 ? ` + ${money(a.transportCost)} transport` : ""}
+                </div>
+                <ul className="proscons">
+                  {a.pros.map((p) => <li key={p} className="pro">{p}</li>)}
+                  {a.cons.map((c) => <li key={c} className="con">{c}</li>)}
+                </ul>
+                <a className="btn-link" href={a.stay.bookingUrl} target="_blank" rel="noopener noreferrer">Check this one</a>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <h3>Book</h3>
       <div className="book">
-        {trip.legs.map((leg) => (
-          <a key={leg.groupId} className="btn btn-primary" href={leg.flight.bookingUrl} target="_blank" rel="noopener noreferrer sponsored">
-            Check flights{multi ? ` (${leg.groupId})` : ""}: {leg.airport} → {dest.name}
-          </a>
-        ))}
+        {trip.legs.map((leg) =>
+          leg.flight.returnBookingUrl ? (
+            <div key={leg.groupId} className="book">
+              <a className="btn btn-primary" href={leg.flight.bookingUrl} target="_blank" rel="noopener noreferrer sponsored">
+                Outbound{multi ? ` (${leg.groupId})` : ""}: {leg.flight.origin} → {dest.name}
+              </a>
+              <a className="btn btn-primary" href={leg.flight.returnBookingUrl} target="_blank" rel="noopener noreferrer sponsored">
+                Return{multi ? ` (${leg.groupId})` : ""}: {dest.name} → {leg.flight.returnAirport}
+              </a>
+              <p className="fineprint" style={{ margin: 0 }}>Two separate one-way tickets: book both. If one flight changes, the other airline won&apos;t rebook you.</p>
+            </div>
+          ) : (
+            <a key={leg.groupId} className="btn btn-primary" href={leg.flight.bookingUrl} target="_blank" rel="noopener noreferrer sponsored">
+              Check flights{multi ? ` (${leg.groupId})` : ""}: {leg.airport} → {dest.name}
+            </a>
+          ),
+        )}
         <a className="btn" href={trip.stay.bookingUrl} target="_blank" rel="noopener noreferrer">
           {trip.stayEstimated ? "See accommodation prices" : `Check ${trip.stay.name}`}
         </a>

@@ -20,8 +20,10 @@ export const PENALTIES = {
   /** Separate tickets: if the first flight is late, the airline won't rebook you. */
   selfTransferPP: 30,
 
-  /** Each hour of extra travel to reach a non-home airport (counted both ways). */
+  /** Each hour of extra travel to or from a non-home airport. */
   extraTravelHourPP: 8,
+  /** Travel home after a trip counts for more: you're tired and carrying bags. */
+  returnTravelMultiplier: 1.5,
 
   /** Each hour lost at the destination: arriving after midday or leaving before 5pm. */
   lostDestinationHourPP: 2,
@@ -32,9 +34,18 @@ export const PENALTIES = {
   ratingReference: 7.5,
   perRatingPointPerNight: 6,
 
-  /** Accommodation: per night, for each minute beyond 15 mins from the centre. */
-  centreFreeMins: 15,
-  perCentreMinutePerNight: 0.4,
+  /** Accommodation: time spent getting to the centre, beyond this many minutes each way. */
+  centreFreeMins: 12,
+  /** Value of each hour spent commuting into the centre, per person (two trips a day). */
+  commuteHourPP: 4,
+  /** A stay further out than this is too far for walking, so a day ticket is added to the cost. */
+  walkableMins: 15,
+
+  /** Deals: how far below the typical price for the route a flight must be. */
+  dealPctBelow: 0.3,
+  errorFarePctBelow: 0.55,
+  /** Need at least this many prices for a route before calling something a deal. */
+  dealMinSamples: 10,
 };
 
 /** Search limits that keep searches fast and within free API quotas. */
@@ -47,5 +58,9 @@ export const LIMITS = {
   maxCities: 12,
   /** How many trips get real accommodation prices (the rest use estimates). */
   stayLookups: 16,
+  /** Accommodation is fetched this far out so cheaper further-out options can be compared. */
+  stayCompareMins: 45,
+  /** Destinations checked for "out from one airport, back into another" trips. */
+  mixedAirportDestinations: 4,
   maxTravellers: 9,
 };

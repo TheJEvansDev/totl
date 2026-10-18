@@ -5,8 +5,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { destName, money, shortDate } from "@/lib/client/format";
 import { type SavedSearch, addSaved, decodeSearch, encodeSearch, loadPrefs, loadSaved, removeSaved, savePrefs } from "@/lib/client/storage";
 import type { SearchRequest, SearchResponse, SortMode } from "@/lib/types";
+import type { Plan } from "@/lib/ai/plan";
+import { Compromises } from "./Compromises";
 import { Feedback } from "./Feedback";
 import { Heatmap } from "./Heatmap";
+import { PlanBox } from "./PlanBox";
 import { SearchForm, defaultRequest } from "./SearchForm";
 import { TripCard } from "./TripCard";
 import { TripDetail } from "./TripDetail";
@@ -26,7 +29,7 @@ function describe(req: SearchRequest): string {
   return `${g.homeAirport} → ${to} · ${when}`;
 }
 
-export function App() {
+export function App({ aiEnabled }: { aiEnabled: boolean }) {
   const [req, setReq] = useState<SearchRequest>(() => defaultRequest());
   const [lastReq, setLastReq] = useState<SearchRequest | null>(null);
   const [res, setRes] = useState<SearchResponse | null>(null);
@@ -38,6 +41,7 @@ export function App() {
   const [openTrip, setOpenTrip] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedSearch[]>([]);
   const [toast, setToast] = useState("");
+  const [plan, setPlan] = useState<Plan | null>(null);
 
   const run = useCallback(async (r: SearchRequest) => {
     if (!r.groups[0].homeAirport) {
@@ -90,7 +94,8 @@ export function App() {
     if (!res) return [];
     const list = [...res.trips];
     if (sort === "smart") list.sort((a, b) => a.smartScore - b.smartScore);
-    else list.sort((a, b) => a.total - b.total);
+    else if (sort === "cheapest") list.sort((a, b) => a.total - b.total);
+    else list.sort((a, b) => (b.deal?.pctBelow ?? -1) - (a.deal?.pctBelow ?? -1) || a.smartScore - b.smartScore);
     // Keep variety near the top: at most 3 trips per destination before the rest.
     const counts = new Map<string, number>();
     const first: typeof list = [];
@@ -103,6 +108,7 @@ export function App() {
     return [...first, ...rest];
   }, [res, sort]);
 
+  const dealCount = useMemo(() => res?.trips.filter((t) => t.deal).length ?? 0, [res]);
   const tripById = useMemo(() => new Map(res?.trips.map((t) => [t.id, t]) ?? []), [res]);
   const selected = openTrip ? tripById.get(openTrip) : undefined;
   const closeTrip = useCallback(() => setOpenTrip(null), []);
@@ -124,6 +130,28 @@ export function App() {
 
   return (
     <main className="shell">
+      {aiEnabled && (
+        <PlanBox
+          current={req}
+          onPlan={(r, p) => {
+            setReq(r);
+            setPlan(p);
+            if (r.groups[0].homeAirport) run(r);
+            else setError("Which airport are you flying from? Choose it below and search.");
+          }}
+        />
+      )}
+      {plan && (
+        <div className="notice notice-info plan-summary">
+          <b>{plan.summary}</b>
+          {plan.assumptions.length > 0 && (
+            <ul>
+              {plan.assumptions.map((a) => <li key={a}>{a}</li>)}
+            </ul>
+          )}
+          <span className="meta">Check the details below and change anything that&apos;s not right.</span>
+        </div>
+      )}
       <SearchForm value={req} onChange={setReq} onSubmit={() => run(req)} busy={busy} />
 
       {error && <p className="notice notice-bad" role="alert" style={{ marginTop: 12 }}>{error}</p>}
@@ -170,12 +198,23 @@ export function App() {
                   <div className="seg" role="group" aria-label="Sort">
                     <button aria-pressed={sort === "smart"} onClick={() => setSort("smart")}>Best value</button>
                     <button aria-pressed={sort === "cheapest"} onClick={() => setSort("cheapest")}>Cheapest</button>
+                    <button aria-pressed={sort === "deals"} onClick={() => setSort("deals")}>
+                      Deals{dealCount > 0 ? ` (${dealCount})` : ""}
+                    </button>
                   </div>
                 )}
               </div>
+              {tab === "trips" && <Compromises items={res.compromises} onOpen={setOpenTrip} />}
               {tab === "trips" && sort === "smart" && (
                 <p className="meta" style={{ margin: 0 }}>
                   Best value ranks by total price, but marks down 6am flights, long layovers, far-off airports and badly located stays.
+                </p>
+              )}
+              {tab === "trips" && sort === "deals" && (
+                <p className="meta" style={{ margin: 0 }}>
+                  {dealCount > 0
+                    ? "Flights well below the typical price for that route in this search. Possible error fares can be cancelled by the airline, so don't book non-refundable extras until it's confirmed."
+                    : "No unusually cheap flights in this search. Try a wider date window or more airports."}
                 </p>
               )}
             </>

@@ -1,6 +1,6 @@
 import type { Airport } from "../data/airports";
 import type { Destination } from "../data/destinations";
-import type { FlightOption, StayOption, StayPrefs } from "../types";
+import type { FlightOption, OneWayFlight, StayOption, StayPrefs } from "../types";
 
 export interface FlightQuery {
   origin: Airport;
@@ -13,12 +13,25 @@ export interface FlightQuery {
   children: number;
 }
 
+export interface OneWayQuery {
+  /** "out": UK airport to destinations. "back": destinations to UK airport. */
+  direction: "out" | "back";
+  airport: Airport;
+  destinations: Destination[];
+  dateFrom: string;
+  dateTo: string;
+  adults: number;
+  children: number;
+}
+
 export interface FlightProvider {
   id: string;
   label: string;
   sample: boolean;
   /** Return-trip options from one origin to any of the destinations. */
   search(q: FlightQuery): Promise<FlightOption[]>;
+  /** One-way options, used to fly out of one airport and home into another. */
+  searchOneWay(q: OneWayQuery): Promise<OneWayFlight[]>;
 }
 
 export interface StayQuery {

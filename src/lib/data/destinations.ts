@@ -83,6 +83,12 @@ export const AIRLINES: Record<string, { name: string; checkedBag: number }> = {
   PC: { name: "Pegasus", checkedBag: 30 },
 };
 
+/** Public transport day ticket per person (GBP, est.). Default for unlisted cities. */
+const DAY_TICKETS: Record<string, number> = { AMS: 8, PAR: 8, CPH: 10, BER: 9, MUC: 8, VIE: 7, DUB: 8, REK: 10, BRU: 7, MIL: 7, ROM: 6, VCE: 22 };
+export function dayTicketPP(code: string): number {
+  return DAY_TICKETS[code] ?? 5;
+}
+
 export function airlineName(code: string): string {
   return AIRLINES[code]?.name ?? code;
 }

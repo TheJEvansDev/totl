@@ -2,7 +2,7 @@
 
 export type BagOption = "cabin" | "checked";
 export type StayType = "hotel" | "apartment" | "any";
-export type SortMode = "smart" | "cheapest";
+export type SortMode = "smart" | "cheapest" | "deals";
 
 /**
  * A set of people travelling together from the same place.
@@ -15,6 +15,10 @@ export interface TravellerGroup {
   extraAirports: string[];
   /** Include airports within this many hours by road/rail. 0 = off. */
   nearbyHours: number;
+  /** Allow flying out of one airport and home into another (e.g. out from Stansted, back into Bristol). */
+  mixAirports: boolean;
+  /** Only fly home into this airport. Empty = whichever works out best. */
+  returnTo: string;
   /** Optional starting point (e.g. from geolocation). Defaults to the home airport. */
   from?: { lat: number; lon: number } | null;
   adults: number;
@@ -54,10 +58,13 @@ export interface SearchRequest {
 export interface FlightOption {
   id: string;
   source: "sample" | "travelpayouts";
-  origin: string; // airport code
+  origin: string; // airport code, outbound
+  /** Airport you fly home into. Same as origin for a normal return ticket. */
+  returnAirport: string;
   destination: string; // city code
   destinationAirport: string;
-  airline: string; // IATA carrier code
+  airline: string; // IATA carrier code, outbound
+  returnAirline: string;
   departDate: string; // YYYY-MM-DD (local, origin)
   returnDate: string; // YYYY-MM-DD (local, destination)
   outDepart: string; // ISO UTC
@@ -71,6 +78,8 @@ export interface FlightOption {
   selfTransfer: boolean;
   pricePerPerson: number; // GBP, return, before bags
   bookingUrl: string;
+  /** Separate link for the return flight when it's two one-way tickets. */
+  returnBookingUrl: string | null;
   /** How old the cached price is, if known. */
   seenHoursAgo: number | null;
 }
@@ -85,6 +94,53 @@ export interface StayOption {
   total: number; // GBP for the whole stay
   freeCancellation: boolean | null;
   bookingUrl: string;
+}
+
+/** One-way flight, used to build "out from A, back into B" trips. */
+export interface OneWayFlight {
+  id: string;
+  source: "sample" | "travelpayouts";
+  from: string; // airport code (UK) or city code (destination)
+  to: string;
+  airline: string;
+  date: string; // local departure date
+  depart: string; // ISO UTC
+  arrive: string;
+  stops: number;
+  layoverMins: number;
+  price: number; // per person
+  bookingUrl: string;
+  seenHoursAgo: number | null;
+}
+
+export interface StayAlternative {
+  label: string;
+  stay: StayOption;
+  /** Public transport to the centre over the trip, all travellers. */
+  transportCost: number;
+  /** Difference vs the chosen stay, including transport. Negative = cheaper. */
+  netVsChosen: number;
+  pros: string[];
+  cons: string[];
+}
+
+/** Same trip with a different pair of airports, for comparison. */
+export interface AirportOption {
+  out: string;
+  back: string;
+  pricePerPerson: number;
+  /** Change in total cost vs the chosen flights (negative = cheaper). */
+  totalDelta: number;
+  groundNote: string;
+  extraHours: number;
+  flags: string[];
+  bookingUrl: string;
+  returnBookingUrl: string | null;
+}
+
+export interface Deal {
+  kind: "deal" | "error";
+  pctBelow: number;
 }
 
 export interface CostLine {
@@ -116,6 +172,9 @@ export interface Trip {
   legs: GroupLeg[];
   stay: StayOption;
   stayEstimated: boolean;
+  stayAlternatives: StayAlternative[];
+  airportOptions: AirportOption[];
+  deal: Deal | null;
   costs: CostLine[];
   total: number;
   perPerson: number;
@@ -147,8 +206,17 @@ export interface DestinationSummary {
   total: number;
 }
 
+/** A trade-off that saves money compared with the top result. */
+export interface Compromise {
+  label: string;
+  detail: string;
+  saving: number;
+  tripId: string | null;
+}
+
 export interface SearchResponse {
   trips: Trip[];
+  compromises: Compromise[];
   heatmap: Heatmap | null;
   destinations: DestinationSummary[];
   meta: {

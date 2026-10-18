@@ -12,7 +12,7 @@ const DESTS_SORTED = [...DESTINATIONS].sort((a, b) => a.name.localeCompare(b.nam
 export function defaultRequest(homeAirport = ""): SearchRequest {
   const t = todayUK();
   return {
-    groups: [{ id: "you", homeAirport, extraAirports: [], nearbyHours: 0, from: null, adults: 2, children: 0 }],
+    groups: [{ id: "you", homeAirport, extraAirports: [], nearbyHours: 0, mixAirports: true, returnTo: "", from: null, adults: 2, children: 0 }],
     destination: { mode: "anywhere", maxPerPerson: 300 },
     dates: { mode: "window", from: addDays(t, 14), to: addDays(t, 52), minNights: 2, maxNights: 3, weekendsOnly: true },
     bags: "cabin",
@@ -170,6 +170,31 @@ export function SearchForm({
             ))}
           </div>
         )}
+        <div className="row" style={{ marginTop: 10 }}>
+          <label className="field">
+            <span>Fly home into</span>
+            <select
+              className="input"
+              value={!g.mixAirports ? "same" : g.returnTo}
+              onChange={(e) =>
+                e.target.value === "same"
+                  ? setGroup({ mixAirports: false, returnTo: "" })
+                  : setGroup({ mixAirports: true, returnTo: e.target.value })
+              }
+            >
+              <option value="">Whichever works out best</option>
+              <option value="same">The airport I flew out of</option>
+              {AIRPORTS_SORTED.map((a) => (
+                <option key={a.code} value={a.code}>
+                  Only {a.city === a.name ? a.name : `${a.city} ${a.name}`} ({a.code}){a.code === g.homeAirport ? " (home)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="hint">
+          Fly out of a cheaper airport further away and land back close to home. Getting home quickly counts for more in Best value.
+        </p>
         {locError && <p className="meta">{locError}</p>}
       </div>
 

@@ -26,8 +26,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-GB">
       <body>
-        <div className="shell" style={{ paddingBottom: 0 }}>
-          <header className="topbar">
+        <div className="appbar">
+          <header className="shell topbar" style={{ padding: "14px 16px 10px" }}>
             <Link href="/" className="brand">
               <span className="brand-name">
                 {APP_NAME.slice(0, -1)}

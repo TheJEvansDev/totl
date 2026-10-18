@@ -17,7 +17,9 @@ export function flightSearchUrl(
   marker?: string,
 ): string {
   const pax = `${adults}${children > 0 ? children : ""}`;
-  const url = new URL(`https://www.aviasales.com/search/${origin}${ddmm(depart)}${destination}${ddmm(ret)}${pax}`);
+  // An empty return date gives a one-way search.
+  const back = ret ? ddmm(ret) : "";
+  const url = new URL(`https://www.aviasales.com/search/${origin}${ddmm(depart)}${destination}${back}${pax}`);
   url.searchParams.set("currency", "gbp");
   if (marker) url.searchParams.set("marker", marker);
   return url.toString();

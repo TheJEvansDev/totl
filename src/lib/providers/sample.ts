@@ -6,10 +6,10 @@ import type { Airport } from "../data/airports";
 import type { Destination } from "../data/destinations";
 import { addDays, dayOfWeek, daysBetween, localToUtc, parseDate, todayUK } from "../dates";
 import { flightSearchUrl, hotelSearchUrl } from "../links";
-import type { FlightOption, StayOption } from "../types";
+import type { FlightOption, OneWayFlight, StayOption } from "../types";
 import { rand } from "../util";
 import { nightFactor } from "./estimate";
-import type { FlightProvider, FlightQuery, StayProvider, StayQuery } from "./types";
+import type { FlightProvider, FlightQuery, OneWayQuery, StayProvider, StayQuery } from "./types";
 import { roomsNeeded } from "./types";
 
 // Day-of-week multipliers, 0 = Sunday.
@@ -27,6 +27,12 @@ function servesRoute(origin: Airport, dest: Destination): boolean {
   return origin.size === 2 ? r < 0.7 : r < 0.35;
 }
 
+/** Smaller airports only fly most routes on some days of the week. */
+function operatesOn(origin: Airport, dest: Destination, date: string): boolean {
+  if (origin.size === 3) return true;
+  return rand(`days|${origin.code}|${dest.code}|${dayOfWeek(date)}`) < (origin.size === 2 ? 0.5 : 0.35);
+}
+
 function carriers(origin: Airport): [string, string] {
   if (origin.code === "LHR") return ["BA", "BA"];
   if (origin.code === "LCY") return ["BA", "KL"];
@@ -42,6 +48,14 @@ function originFactor(origin: Airport): number {
   return 1.18;
 }
 
+/** Occasional flash sales and error fares, so deal detection has something to find. */
+function saleFactor(key: string): number {
+  const r = rand(`sale|${key}`);
+  if (r < 0.003) return 0.3;
+  if (r < 0.025) return 0.55;
+  return 1;
+}
+
 function leadFactor(depart: string): number {
   const days = daysBetween(todayUK(), depart);
   if (days < 14) return 1.4;
@@ -53,6 +67,52 @@ export const sampleFlights: FlightProvider = {
   id: "sample",
   label: "Sample flight data",
   sample: true,
+  async searchOneWay(q: OneWayQuery): Promise<OneWayFlight[]> {
+    const out: OneWayFlight[] = [];
+    const [cheapCarrier, altCarrier] = carriers(q.airport);
+    const dows = q.direction === "out" ? OUT_DOW : RET_DOW;
+    for (const dest of q.destinations) {
+      if (!servesRoute(q.airport, dest)) continue;
+      const routeKey = `${q.airport.code}|${dest.code}`;
+      const routeFactor = 0.85 + rand(`rf|${routeKey}`) * 0.3;
+      for (let d = parseDate(q.dateFrom); d <= parseDate(q.dateTo); d += 86_400_000) {
+        const date = new Date(d).toISOString().slice(0, 10);
+        if (!operatesOn(q.airport, dest, date)) continue;
+        const key = `ow|${q.direction}|${routeKey}|${date}`;
+        const month = Number(date.slice(5, 7)) - 1;
+        const season = dest.kind === "sun" ? SUN_SEASON[month] : CITY_SEASON[month];
+        // One-way fares are roughly half a return, a bit more for flag carriers.
+        const base =
+          dest.flightBase * 0.52 * originFactor(q.airport) * routeFactor * dows[dayOfWeek(date)] * season *
+          leadFactor(date) * (0.75 + rand(`noise|${key}`) * 0.55) * saleFactor(key);
+        const tz = q.direction === "out" ? "Europe/London" : dest.tz;
+        const [from, to] = q.direction === "out" ? [q.airport.code, dest.code] : [dest.code, q.airport.code];
+        const options: [string, number, number][] = [
+          [cheapCarrier, EARLY_SLOTS[Math.floor(rand(`a|${key}`) * EARLY_SLOTS.length)], base * 0.85],
+          [altCarrier, GOOD_SLOTS[Math.floor(rand(`b|${key}`) * GOOD_SLOTS.length)], base * 1.08],
+        ];
+        options.forEach(([airline, mins, price], i) => {
+          const depart = localToUtc(date, mins, tz);
+          out.push({
+            id: `s-${key}|${i}`,
+            source: "sample",
+            from,
+            to,
+            airline,
+            date,
+            depart,
+            arrive: new Date(Date.parse(depart) + dest.flightMins * 60000).toISOString(),
+            stops: 0,
+            layoverMins: 0,
+            price: Math.max(15, Math.round(price)),
+            bookingUrl: flightSearchUrl(from, to, date, "", q.adults, q.children),
+            seenHoursAgo: Math.floor(rand(`seen|${key}|${i}`) * 40) + 1,
+          });
+        });
+      }
+    }
+    return out;
+  },
   async search(q: FlightQuery): Promise<FlightOption[]> {
     const out: FlightOption[] = [];
     const [cheapCarrier, altCarrier] = carriers(q.origin);
@@ -64,8 +124,10 @@ export const sampleFlights: FlightProvider = {
       const altStops = q.origin.size === 1 ? 1 : 0;
       for (let d = parseDate(q.departFrom); d <= parseDate(q.departTo); d += 86_400_000) {
         const depart = new Date(d).toISOString().slice(0, 10);
+        if (!operatesOn(q.origin, dest, depart)) continue;
         for (let n = q.minNights; n <= q.maxNights; n++) {
           const ret = addDays(depart, n);
+          if (!operatesOn(q.origin, dest, ret)) continue;
           const key = `${routeKey}|${depart}|${ret}`;
           const month = Number(depart.slice(5, 7)) - 1;
           const season = dest.kind === "sun" ? SUN_SEASON[month] : CITY_SEASON[month];
@@ -77,7 +139,8 @@ export const sampleFlights: FlightProvider = {
             RET_DOW[dayOfWeek(ret)] *
             season *
             leadFactor(depart) *
-            (0.78 + rand(`noise|${key}`) * 0.5);
+            (0.78 + rand(`noise|${key}`) * 0.5) *
+            saleFactor(key);
 
           // Option A: budget carrier, antisocial times, cheapest.
           const aOut = EARLY_SLOTS[Math.floor(rand(`ao|${key}`) * EARLY_SLOTS.length)];
@@ -120,9 +183,11 @@ function makeFlight(
     id: `s-${id}`,
     source: "sample",
     origin: q.origin.code,
+    returnAirport: q.origin.code,
     destination: destCode,
     destinationAirport: destCode,
     airline,
+    returnAirline: airline,
     departDate: depart,
     returnDate: ret,
     outDepart,
@@ -135,6 +200,7 @@ function makeFlight(
     selfTransfer,
     pricePerPerson: Math.max(25, Math.round(price)),
     bookingUrl: flightSearchUrl(q.origin.code, destCode, depart, ret, q.adults, q.children),
+    returnBookingUrl: null,
     seenHoursAgo: Math.floor(rand(`seen|${id}`) * 40) + 1,
   };
 }
@@ -157,7 +223,9 @@ export const sampleStays: StayProvider = {
       const rating = Math.round((6.6 + rand(`rating|${k}`) * 2.8) * 10) / 10;
       const centreMins = Math.round(3 + rand(`dist|${k}`) ** 1.8 * 40);
       if (rating < prefs.minRating || centreMins > prefs.maxCentreMins) continue;
-      const quality = 0.72 + (rating - 7) * 0.13 - centreMins * 0.006 + rand(`q|${k}`) * 0.18;
+      // Further out is cheaper, more so in expensive cities.
+      const distanceDiscount = centreMins * (dest.hotelNightly > 130 ? 0.011 : 0.008);
+      const quality = 0.78 + (rating - 7) * 0.13 - distanceDiscount + rand(`q|${k}`) * 0.18;
       const units = type === "apartment" ? 1 + Math.max(0, people - 2) * 0.18 : roomsNeeded(adults) * (children > 0 ? 1.1 : 1);
       let total = 0;
       for (let n = 0; n < nights; n++) {
