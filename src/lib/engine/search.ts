@@ -1,12 +1,14 @@
 // The total-cost engine. For every origin airport, destination and date pair,
 // works out flights + bags + getting to the airport + accommodation + transfers,
 // then ranks trips by smart score (cost plus usability penalties).
+// Amounts are GBP. Text shown to people writes money as {£123} so the browser
+// can show it in the chosen currency.
 
+import { formatKm } from "../area";
 import { LIMITS, PENALTIES as P } from "../config/penalties";
 import type { Airport } from "../data/airports";
-import { UK_AIRPORTS, getAirport, travelHours } from "../data/airports";
+import { getAirport, getDestination, nearbyAirports } from "../data/places";
 import type { Destination } from "../data/destinations";
-import { getDestination } from "../data/destinations";
 import { airlineName } from "../data/destinations";
 import { addDays, dayName, dayOfWeek, daysBetween, localHour } from "../dates";
 import { estimatedStay } from "../providers/estimate";
@@ -32,6 +34,7 @@ import type {
 import { mapLimit } from "../util";
 import { access, assessFlight, assessStay, bagCost, groundCost, stayTransportCost } from "./costs";
 import type { DatePlan } from "./request";
+import { placesForTrips } from "./places";
 import { destinationList, expandDates } from "./request";
 
 export class SearchError extends Error {}
@@ -46,10 +49,7 @@ export function candidateAirports(group: TravellerGroup): Airport[] {
   }
   if (group.nearbyHours > 0) {
     const start = group.from ?? home;
-    UK_AIRPORTS.map((a) => ({ a, h: travelHours(start, a) }))
-      .filter(({ h }) => h <= group.nearbyHours)
-      .sort((x, y) => x.h - y.h)
-      .forEach(({ a }) => chosen.set(a.code, a));
+    nearbyAirports(start, home.countryCode, group.nearbyHours).forEach((a) => chosen.set(a.code, a));
   }
   return [...chosen.values()].slice(0, LIMITS.maxAirportsPerGroup);
 }
@@ -115,7 +115,7 @@ function buildTrip(
         : f.returnBookingUrl
           ? `Flights ${f.origin}–${dest.code}, two one-way tickets`
           : `Flights ${f.origin}–${dest.code}, ${airlineName(f.airline)}`;
-    costs.push({ label: `${route}, ${l.leg.people} × £${f.pricePerPerson}${who}`, amount: f.pricePerPerson * l.leg.people, estimated: false });
+    costs.push({ label: `${route}, ${l.leg.people} × {£${f.pricePerPerson}}${who}`, amount: f.pricePerPerson * l.leg.people, estimated: false });
     if (l.bags > 0) costs.push({ label: `Checked bags${who}`, amount: l.bags, estimated: true });
     costs.push({ label: `${l.leg.groundNote}${who}`, amount: Math.round(l.ground), estimated: true });
   }
@@ -124,7 +124,7 @@ function buildTrip(
     amount: stay.total,
     estimated: stayEstimated,
   });
-  const localTransport = stayTransportCost(stay, dest.code, nights, people);
+  const localTransport = stayTransportCost(stay, dest, nights, people);
   if (localTransport > 0) costs.push({ label: `Day tickets into the centre, ${plural(nights)}`, amount: localTransport, estimated: true });
   costs.push({
     label: `Airport transfers in ${dest.name}`,
@@ -164,17 +164,17 @@ function chooseStay(
   dest: Destination,
   nights: number,
   people: number,
-  maxCentreMins: number,
+  maxCentreKm: number,
   variant: "smart" | "cheap",
 ): { pick: StayOption; alternatives: StayAlternative[]; flags: string[] } | null {
   if (options.length === 0) return null;
-  const transport = (o: StayOption) => stayTransportCost(o, dest.code, nights, people);
+  const transport = (o: StayOption) => stayTransportCost(o, dest, nights, people);
   const cost = (o: StayOption) => o.total + transport(o);
   const value = (o: StayOption) => cost(o) + sum(assessStay(o, nights, people));
   const best = (list: StayOption[], f: (o: StayOption) => number) =>
     list.length === 0 ? null : list.reduce((a, b) => (f(b) < f(a) ? b : a));
 
-  const within = options.filter((o) => o.centreMins === null || o.centreMins <= maxCentreMins);
+  const within = options.filter((o) => o.centreKm === null || o.centreKm <= maxCentreKm);
   const flags: string[] = [];
   let pick = best(within, variant === "cheap" ? cost : value);
   if (!pick) {
@@ -183,23 +183,23 @@ function chooseStay(
   }
 
   const candidates: [string, StayOption | null][] = [
-    ["Central", best(options.filter((o) => o.centreMins !== null && o.centreMins <= P.walkableMins), value)],
+    ["Central", best(options.filter((o) => o.centreKm !== null && o.centreKm <= 1.5), value)],
     ["Cheapest in your filters", best(within, cost)],
-    ["Further out", best(options.filter((o) => o.centreMins !== null && o.centreMins > maxCentreMins), cost)],
+    ["Further out", best(options.filter((o) => o.centreKm !== null && o.centreKm > maxCentreKm), cost)],
   ];
   const seen = new Set([pick.id]);
   const describe = (label: string, o: StayOption): StayAlternative => {
     const net = cost(o) - cost(pick!);
     const pros: string[] = [];
     const cons: string[] = [];
-    if (net <= -5) pros.push(`£${Math.round(-net)} cheaper, including transport`);
-    if (net >= 5) cons.push(`£${Math.round(net)} more`);
-    if (o.centreMins !== null && o.centreMins <= P.walkableMins) pros.push("Walkable to the centre, no transport costs");
-    if (o.centreMins !== null && o.centreMins > P.walkableMins) {
-      cons.push(`~${o.centreMins} mins each way to the centre (about ${Math.round((o.centreMins * 2 * nights) / 60)} hrs over the trip)`);
-      if (transport(o) > 0) cons.push(`Day tickets add about £${transport(o)}`);
+    if (net <= -5) pros.push(`{£${Math.round(-net)}} cheaper, including transport`);
+    if (net >= 5) cons.push(`{£${Math.round(net)}} more`);
+    if (o.centreKm !== null && o.centreKm <= P.walkableKm) pros.push("Walkable to the centre, no transport costs");
+    if (o.centreKm !== null && o.centreMins !== null && o.centreKm > P.walkableKm) {
+      cons.push(`${formatKm(o.centreKm)} from the centre: about ${o.centreMins} mins each way by public transport (est.), ~${Math.round((o.centreMins * 2 * nights) / 60)} hrs over the trip`);
+      if (transport(o) > 0) cons.push(`Day tickets add about {£${transport(o)}}`);
     }
-    if (o.centreMins !== null && o.centreMins > 25) cons.push("Late nights may need a taxi or night bus");
+    if (o.centreKm !== null && o.centreKm > 4) cons.push("Outskirts: check the map and how late public transport runs before booking");
     if (o.rating !== null && o.rating >= 8.5) pros.push(`Highly rated (${o.rating}/10)`);
     if (o.rating !== null && o.rating < 7.5) cons.push(`Lower rated (${o.rating}/10)`);
     if (o.freeCancellation === true) pros.push("Free cancellation");
@@ -213,7 +213,7 @@ function chooseStay(
     alternatives.push(describe(label, o));
   }
   const further = alternatives.find((a) => a.label === "Further out");
-  if (further && further.netVsChosen <= -30) flags.push(`Stay further out, save £${-further.netVsChosen}`);
+  if (further && further.netVsChosen <= -30) flags.push(`Stay further out, save {£${-further.netVsChosen}}`);
   return { pick, alternatives, flags };
 }
 
@@ -347,7 +347,7 @@ export async function runSearch(
         adults,
         children,
         // Look further out than asked, so cheaper options can be compared.
-        prefs: { ...req.stay, maxCentreMins: Math.max(req.stay.maxCentreMins, LIMITS.stayCompareMins) },
+        prefs: { ...req.stay, maxCentreKm: Math.max(req.stay.maxCentreKm, LIMITS.stayCompareKm) },
       }));
     } catch (err) {
       console.error("stay search failed", k, err);
@@ -360,7 +360,7 @@ export async function runSearch(
   // for the same destination (or across all destinations if none were fetched).
   const ratios = new Map<string, number[]>();
   for (const [k, all] of stays) {
-    const options = all.filter((o) => o.centreMins === null || o.centreMins <= req.stay.maxCentreMins);
+    const options = all.filter((o) => o.centreKm === null || o.centreKm <= req.stay.maxCentreKm);
     if (options.length === 0) continue;
     const [code, checkin, checkout] = k.split("|");
     const est = estimatedStay(getDestination(code)!, checkin, checkout, adults, children, req.stay).total;
@@ -389,7 +389,7 @@ export async function runSearch(
       return trip;
     }
     const people = adults + children;
-    const chosen = chooseStay(options, c.dest, daysBetween(c.depart, c.ret), people, req.stay.maxCentreMins, c.variant)!;
+    const chosen = chooseStay(options, c.dest, daysBetween(c.depart, c.ret), people, req.stay.maxCentreKm, c.variant)!;
     return buildTrip(id, c.dest, c.depart, c.ret, c.legs, chosen.pick, false, chosen.flags, chosen.alternatives);
   });
 
@@ -435,7 +435,7 @@ export async function runSearch(
     const within = trips.filter((t) => t.perPerson <= max);
     if (within.length === 0) {
       const cheapest = Math.min(...trips.map((t) => t.perPerson));
-      warnings.push(`Nothing under £${max} per person. The cheapest trip found is £${cheapest} per person.`);
+      warnings.push(`Nothing under {£${max}} per person. The cheapest trip found is {£${cheapest}} per person.`);
     }
     trips = within;
   }
@@ -454,8 +454,10 @@ export async function runSearch(
   const compromises = findCompromises(trips, req);
   compromises.forEach((c) => c.tripId && keep.add(c.tripId));
 
+  const sent = trips.filter((t) => keep.has(t.id)).sort((a, b) => a.smartScore - b.smartScore);
   return {
-    trips: trips.filter((t) => keep.has(t.id)).sort((a, b) => a.smartScore - b.smartScore),
+    trips: sent,
+    places: placesForTrips(sent, req),
     compromises,
     heatmap,
     destinations: destinationsSummary,
@@ -510,7 +512,7 @@ async function mixedAirportTrips(
     const dest = getDestination(direction === "out" ? f.to : f.from)!;
     const airport = getAirport(direction === "out" ? f.from : f.to)!;
     const a = access(group, airport);
-    const [depTz, arrTz] = direction === "out" ? ["Europe/London", dest.tz] : [dest.tz, "Europe/London"];
+    const [depTz, arrTz] = direction === "out" ? [airport.tz, dest.tz] : [dest.tz, airport.tz];
     const arr = localHour(f.arrive, arrTz);
     let s = f.price * people + a.oneWay + a.extraHours * P.extraTravelHourPP * people * (direction === "back" ? P.returnTravelMultiplier : 1);
     if (localHour(f.depart, depTz) < P.earlyDepartureBeforeHour) s += P.earlyDeparturePP * people;
@@ -576,6 +578,7 @@ function emptyResponse(
 ): SearchResponse {
   return {
     trips: [],
+    places: {},
     compromises: [],
     heatmap: null,
     destinations: [],
@@ -611,7 +614,7 @@ export function explain(trip: Trip, all: Trip[], group: TravellerGroup): string 
     const mixed = out !== back;
     const dayChanged = baselineDay !== null && day !== baselineDay;
     const airportChanged = mixed || leg.airport !== home.code;
-    const amount = `£${Math.round(saving)}`;
+    const amount = `{£${Math.round(saving)}}`;
     if (!dayChanged && !airportChanged) return `Travelling on these dates saves ${amount} on a typical ${trip.nights}-night trip`;
     const route = mixed ? ` out of ${out}, back into ${back}` : airportChanged ? ` from ${out}` : "";
     const instead = `${dayChanged ? `a ${baselineDay} ` : "a "}return from ${home.name}`;
@@ -663,7 +666,7 @@ export function findCompromises(trips: Trip[], req: SearchRequest): Compromise[]
   if (further)
     out.push({
       label: "Stay further out",
-      detail: `${further.stay.name}, ~${further.stay.centreMins} mins from the centre (transport included)`,
+      detail: `${further.stay.name}, ${formatKm(further.stay.centreKm ?? 0)} from the centre (transport included)`,
       saving: -further.netVsChosen,
       tripId: null,
     });

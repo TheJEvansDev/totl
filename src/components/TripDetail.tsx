@@ -1,27 +1,33 @@
 "use client";
 
-import { destTz, duration, money, shortDate, time } from "@/lib/client/format";
-import { getAirport } from "@/lib/data/airports";
-import { airlineName, getDestination } from "@/lib/data/destinations";
-import { airbnbUrl } from "@/lib/links";
+import { destTz, duration, money, shortDate, time, moneyText } from "@/lib/client/format";
+import { describeDistance, formatKm } from "@/lib/area";
+import { displayCurrency } from "@/lib/client/format";
+import { airportName, cityName, place, tzOf } from "@/lib/client/places";
+import { currencyForCountry } from "@/lib/currency";
+import { airlineName } from "@/lib/data/destinations";
+import { airbnbUrl, mapUrl } from "@/lib/links";
 import type { Trip } from "@/lib/types";
 import { Sheet } from "./Sheet";
 import { flagTone } from "./TripCard";
 
 export function TripDetail({ trip, sample, adults, children, onClose }: { trip: Trip; sample: boolean; adults: number; children: number; onClose: () => void }) {
-  const dest = getDestination(trip.destination)!;
+  const info = place(trip.destination);
+  const dest = { name: cityName(trip.destination), country: info?.country ?? "" };
+  const localCurrency = info ? currencyForCountry(info.countryCode) : undefined;
+  const payTip = localCurrency && localCurrency !== displayCurrency().code ? localCurrency : null;
   const tz = destTz(trip.destination);
   const penaltyTotal = trip.penalties.reduce((s, p) => s + p.amount, 0);
   const multi = trip.legs.length > 1;
 
   return (
     <Sheet
-      title={`${dest.name}, ${dest.country}`}
+      title={dest.country ? `${dest.name}, ${dest.country}` : dest.name}
       subtitle={`${shortDate(trip.depart)} → ${shortDate(trip.return)} · ${trip.nights} nights · ${trip.people} traveller${trip.people > 1 ? "s" : ""}`}
       onClose={onClose}
     >
       {sample && <p className="notice notice-warn">Sample data: these prices are made up for testing.</p>}
-      <div className="trip-why">{trip.why}</div>
+      <div className="trip-why">{moneyText(trip.why)}</div>
 
       <h3>Total trip cost</h3>
       <table className="breakdown">
@@ -29,7 +35,7 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
           {trip.costs.map((c, i) => (
             <tr key={i}>
               <td>
-                {c.label}
+                {moneyText(c.label)}
                 {c.estimated && <span className="est">est.</span>}
               </td>
               <td>{money(c.amount)}</td>
@@ -47,20 +53,20 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
 
       {trip.flags.length > 0 && (
         <div className="tags" style={{ marginTop: 8 }}>
-          {trip.flags.map((f) => <span key={f} className={flagTone(f)}>{f}</span>)}
+          {trip.flags.map((f) => <span key={f} className={flagTone(f)}>{moneyText(f)}</span>)}
         </div>
       )}
 
       <h3>Flights</h3>
       {trip.legs.map((leg) => {
         const f = leg.flight;
-        const airport = getAirport(f.origin);
-        const backAirport = getAirport(f.returnAirport);
+        const airport = { name: airportName(f.origin) };
+        const backAirport = { name: airportName(f.returnAirport) };
         return (
           <div key={leg.groupId}>
             {multi && <p style={{ fontWeight: 700, margin: "8px 0 0" }}>{leg.groupId}</p>}
             <div className="flight">
-              <b>{time(f.outDepart, "Europe/London")}</b>
+              <b>{time(f.outDepart, tzOf(f.origin))}</b>
               <span>
                 {airport?.name} → {dest.name} · {airlineName(f.airline)}
                 <br />
@@ -79,7 +85,7 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
                   {shortDate(f.returnDate)} · {duration(f.retDepart, f.retArrive)} · {f.retStops === 0 ? "direct" : `${f.retStops} stop`}
                 </span>
               </span>
-              <b>{time(f.retArrive, "Europe/London")}</b>
+              <b>{time(f.retArrive, tzOf(f.returnAirport))}</b>
             </div>
             <p className="fineprint">
               Local times. {f.seenHoursAgo !== null ? `Price seen ${f.seenHoursAgo} hours ago.` : "Cached price seen in the last 48 hours."}
@@ -95,7 +101,7 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
           <div className="options">
             {trip.airportOptions.map((o) => {
               const chosen = o.out === trip.legs[0].flight.origin && o.back === trip.legs[0].flight.returnAirport;
-              const name = (c: string) => getAirport(c)?.name ?? c;
+              const name = airportName;
               return (
                 <div key={`${o.out}>${o.back}`} className={`option${chosen ? " option-chosen" : ""}`}>
                   <div className="option-head">
@@ -127,9 +133,21 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
           <span className="meta">
             {trip.stay.type === "apartment" ? "Apartment" : "Hotel"}
             {trip.stay.rating ? ` · rated ${trip.stay.rating}/10` : ""}
-            {trip.stay.centreMins !== null ? ` · about ${trip.stay.centreMins} mins to the centre` : ""}
+
             {trip.stay.freeCancellation === true ? " · free cancellation" : trip.stay.freeCancellation === false ? " · non-refundable" : ""}
           </span>
+          {trip.stay.centreKm !== null && (
+            <>
+              <br />
+              <span className="meta">{describeDistance(trip.stay.centreKm)}</span>
+            </>
+          )}
+          {trip.stay.lat !== null && trip.stay.lon !== null && (
+            <>
+              <br />
+              <a className="btn-link" href={mapUrl(trip.stay.lat, trip.stay.lon)} target="_blank" rel="noopener noreferrer">See where it is on a map</a>
+            </>
+          )}
         </p>
       )}
 
@@ -147,15 +165,20 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
                 </div>
                 <div className="meta">
                   {a.stay.rating ? `${a.stay.rating}/10 · ` : ""}
-                  {a.stay.centreMins !== null ? `${a.stay.centreMins} mins to centre · ` : ""}
+                  {a.stay.centreKm !== null ? `${formatKm(a.stay.centreKm)} from centre · ` : ""}
                   {money(a.stay.total)}
                   {a.transportCost > 0 ? ` + ${money(a.transportCost)} transport` : ""}
                 </div>
                 <ul className="proscons">
-                  {a.pros.map((p) => <li key={p} className="pro">{p}</li>)}
-                  {a.cons.map((c) => <li key={c} className="con">{c}</li>)}
+                  {a.pros.map((p) => <li key={p} className="pro">{moneyText(p)}</li>)}
+                  {a.cons.map((c) => <li key={c} className="con">{moneyText(c)}</li>)}
                 </ul>
-                <a className="btn-link" href={a.stay.bookingUrl} target="_blank" rel="noopener noreferrer">Check this one</a>
+                <span className="row" style={{ gap: 14 }}>
+                  <a className="btn-link" href={a.stay.bookingUrl} target="_blank" rel="noopener noreferrer">Check this one</a>
+                  {a.stay.lat !== null && a.stay.lon !== null && (
+                    <a className="btn-link" href={mapUrl(a.stay.lat, a.stay.lon)} target="_blank" rel="noopener noreferrer">Map</a>
+                  )}
+                </span>
               </div>
             ))}
           </div>
@@ -188,6 +211,12 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
           Compare on Airbnb
         </a>
       </div>
+      {payTip && (
+        <p className="notice notice-info" style={{ marginTop: 10 }}>
+          <b>Money tip:</b> if a site offers to charge you in {displayCurrency().code} instead of {payTip}, say no. Paying in {payTip} with a
+          card that has no foreign transaction fees (such as Revolut, Monzo or Starling) is usually 3-5% cheaper than the site&apos;s own conversion.
+        </p>
+      )}
       <p className="fineprint">Prices can change. The final price is confirmed on the booking site. Some links earn us a small commission at no cost to you.</p>
 
       {penaltyTotal > 0 && (

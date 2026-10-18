@@ -6,7 +6,7 @@
 // Docs: https://support.travelpayouts.com/hc/en-us/articles/203956163
 
 import type { Destination } from "../data/destinations";
-import { getDestination } from "../data/destinations";
+import { getDestination, routeMins } from "../data/places";
 import { daysBetween, localDate } from "../dates";
 import { travelpayoutsUrl } from "../links";
 import type { FlightOption, OneWayFlight } from "../types";
@@ -81,16 +81,17 @@ function toOption(t: TpTicket, q: FlightQuery, dest: Destination, marker?: strin
   if (!t.price || !t.departure_at || !t.return_at || !t.airline) return null;
   // London searches use the city code, so keep only the chosen airport.
   if (t.origin_airport && t.origin_airport !== q.origin.code) return null;
-  const durTo = t.duration_to ?? dest.flightMins;
-  const durBack = t.duration_back ?? dest.flightMins;
+  const directMins = routeMins(q.origin, dest);
+  const durTo = t.duration_to ?? directMins;
+  const durBack = t.duration_back ?? directMins;
   const outStops = t.transfers ?? 0;
   const retStops = t.return_transfers ?? 0;
   // The API doesn't give layover lengths, so estimate from the extra journey time.
-  const layoverOut = outStops > 0 ? Math.max(45, durTo - dest.flightMins - 30) / outStops : 0;
-  const layoverBack = retStops > 0 ? Math.max(45, durBack - dest.flightMins - 30) / retStops : 0;
+  const layoverOut = outStops > 0 ? Math.max(45, durTo - directMins - 30) / outStops : 0;
+  const layoverBack = retStops > 0 ? Math.max(45, durBack - directMins - 30) / retStops : 0;
   const outDepart = new Date(t.departure_at).toISOString();
   const retDepart = new Date(t.return_at).toISOString();
-  const departDate = localDate(outDepart, "Europe/London");
+  const departDate = localDate(outDepart, q.origin.tz);
   const returnDate = localDate(retDepart, dest.tz);
   const nights = daysBetween(departDate, returnDate);
   if (departDate < q.departFrom || departDate > q.departTo || nights < q.minNights || nights > q.maxNights) return null;
@@ -152,10 +153,9 @@ export function travelpayoutsFlights(token: string, marker?: string): FlightProv
       const out: FlightOption[] = [];
       const seen = new Set<string>();
       for (const t of batches.flat()) {
-        const code = t.destination ?? "";
-        if (!wanted.has(code)) continue;
-        const dest = getDestination(code);
-        if (!dest) continue;
+        // Tickets may name an airport or a city code; both resolve to our destination.
+        const dest = getDestination(t.destination ?? "");
+        if (!dest || !wanted.has(dest.code)) continue;
         const opt = toOption(t, q, dest, marker);
         if (opt && !seen.has(opt.id)) {
           seen.add(opt.id);
@@ -171,11 +171,12 @@ function toOneWay(t: TpTicket, q: OneWayQuery, dest: Destination, marker?: strin
   if (!t.price || !t.departure_at || !t.airline) return null;
   const ukAirport = q.direction === "out" ? t.origin_airport : t.destination_airport;
   if (ukAirport && ukAirport !== q.airport.code) return null;
-  const tz = q.direction === "out" ? "Europe/London" : dest.tz;
+  const tz = q.direction === "out" ? q.airport.tz : dest.tz;
   const depart = new Date(t.departure_at).toISOString();
   const date = localDate(depart, tz);
   if (date < q.dateFrom || date > q.dateTo) return null;
-  const dur = t.duration_to ?? t.duration ?? dest.flightMins;
+  const directMins = routeMins(q.airport, dest);
+  const dur = t.duration_to ?? t.duration ?? directMins;
   const stops = t.transfers ?? 0;
   const [from, to] = q.direction === "out" ? [q.airport.code, dest.code] : [dest.code, q.airport.code];
   return {
@@ -188,7 +189,7 @@ function toOneWay(t: TpTicket, q: OneWayQuery, dest: Destination, marker?: strin
     depart,
     arrive: new Date(Date.parse(depart) + dur * 60000).toISOString(),
     stops,
-    layoverMins: stops > 0 ? Math.max(45, dur - dest.flightMins - 30) / stops : 0,
+    layoverMins: stops > 0 ? Math.max(45, dur - directMins - 30) / stops : 0,
     price: Math.round(t.price),
     bookingUrl: travelpayoutsUrl(t.link ?? `/search/${from}`, marker),
     seenHoursAgo: null,

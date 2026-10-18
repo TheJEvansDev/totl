@@ -1,6 +1,6 @@
 # Totl: notes for Claude
 
-UK trip finder that ranks trips by **total cost** (flights + bags + getting to
+Trip finder (any airport worldwide, UK-first) that ranks trips by **total cost** (flights + bags + getting to
 the airport + accommodation + local transport + transfers), not flight price.
 The owner doesn't code: explain changes in plain British English, no em dashes.
 
@@ -24,7 +24,16 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   (flights, cached prices), `liteapi.ts` (hotels), `estimate.ts`. Chosen in
   `index.ts` by env vars.
 - `src/lib/ai/plan.ts`: "Describe your trip" → structured search via Claude.
-- `src/lib/data/`: airports, destinations, bag fees, day tickets. Estimates.
+- `src/lib/data/places.ts`: worldwide airports/cities (server only, from
+  `world-airports.json`, rebuilt with `scripts/build-airports.py`), metro city
+  codes, country cost tiers, place search. Hand-entered UK airports
+  (`airports.ts`) and destinations (`destinations.ts`) override it.
+- The browser never loads the airport list: names come via `/api/places` and
+  `places` in search responses (`src/lib/client/places.ts`).
+- Money is GBP on the server. Server text writes amounts as `{£123}`; the UI
+  converts with `moneyText()`/`money()` into the chosen currency (`/api/rates`, ECB).
+- Stay distance is measured in km (`src/lib/area.ts`); minutes are estimates
+  and must be labelled as such.
 - `src/components/`: UI. `App.tsx` holds state; `Sheet.tsx` is the swipeable sheet.
 
 ## Rules

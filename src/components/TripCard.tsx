@@ -1,7 +1,8 @@
 "use client";
 
-import { destName, destTz, money, shortDate, time } from "@/lib/client/format";
-import { getAirport } from "@/lib/data/airports";
+import { destName, destTz, money, shortDate, time, moneyText } from "@/lib/client/format";
+import { areaFor, formatKm } from "@/lib/area";
+import { airportName } from "@/lib/client/places";
 import { airlineName } from "@/lib/data/destinations";
 import type { Trip } from "@/lib/types";
 
@@ -18,8 +19,8 @@ export function TripCard({ trip, rank, onOpen }: { trip: Trip; rank: number; onO
   const f = leg.flight;
   const tz = destTz(trip.destination);
   const stops = f.outStops + f.retStops;
-  const outName = getAirport(f.origin)?.name ?? f.origin;
-  const backName = getAirport(f.returnAirport)?.name ?? f.returnAirport;
+  const outName = airportName(f.origin);
+  const backName = airportName(f.returnAirport);
   return (
     <button type="button" className="card trip" onClick={onOpen}>
       <div className="trip-top">
@@ -39,11 +40,11 @@ export function TripCard({ trip, rank, onOpen }: { trip: Trip; rank: number; onO
           </div>
         </div>
       </div>
-      <div className="trip-why">{trip.why}</div>
+      <div className="trip-why">{moneyText(trip.why)}</div>
       <div className="trip-line">
         <span>
           ✈ {outName === backName ? outName : `Out of ${outName}, home into ${backName}`} · {airlineName(f.airline)}
-          {f.returnAirline !== f.airline ? ` / ${airlineName(f.returnAirline)}` : ""} · {time(f.outDepart, "Europe/London")} out,{" "}
+          {f.returnAirline !== f.airline ? ` / ${airlineName(f.returnAirline)}` : ""} · {time(f.outDepart, destTz(f.origin))} out,{" "}
           {time(f.retDepart, tz)} back · {stops === 0 ? "direct" : `${stops} stop${stops > 1 ? "s" : ""}`}
         </span>
       </div>
@@ -51,13 +52,13 @@ export function TripCard({ trip, rank, onOpen }: { trip: Trip; rank: number; onO
         <span>
           🛏 {trip.stayEstimated ? "Typical price for a suitable place" : trip.stay.name}
           {trip.stay.rating ? ` · ${trip.stay.rating}/10` : ""}
-          {trip.stay.centreMins !== null ? ` · ${trip.stay.centreMins} mins to centre` : ""}
+          {trip.stay.centreKm !== null ? ` · ${areaFor(trip.stay.centreKm).label.toLowerCase()} (${formatKm(trip.stay.centreKm)})` : ""}
         </span>
       </div>
       {trip.flags.length > 0 && (
         <div className="tags">
           {trip.flags.filter((fl) => !fl.startsWith("Back into")).map((fl) => (
-            <span key={fl} className={flagTone(fl)}>{fl}</span>
+            <span key={fl} className={flagTone(fl)}>{moneyText(fl)}</span>
           ))}
         </div>
       )}

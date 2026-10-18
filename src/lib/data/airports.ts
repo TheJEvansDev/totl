@@ -17,9 +17,15 @@ export interface Airport {
   parkingPerDay: number;
   cityCode?: string;
   size: 1 | 2 | 3;
+  tz: string;
+  countryCode: string;
+  continent: string;
 }
 
-export const UK_AIRPORTS: Airport[] = [
+type UkAirport = Omit<Airport, "tz" | "countryCode" | "continent">;
+
+// Use getAirport() in places.ts to look airports up: it covers the whole world.
+export const UK_AIRPORTS: UkAirport[] = [
   { code: "LHR", name: "Heathrow", city: "London", lat: 51.47, lon: -0.454, localReturnPP: 12, parkingPerDay: 18, cityCode: "LON", size: 3 },
   { code: "LGW", name: "Gatwick", city: "London", lat: 51.153, lon: -0.182, localReturnPP: 25, parkingPerDay: 14, cityCode: "LON", size: 3 },
   { code: "STN", name: "Stansted", city: "London", lat: 51.885, lon: 0.235, localReturnPP: 30, parkingPerDay: 13, cityCode: "LON", size: 3 },
@@ -48,12 +54,6 @@ export const UK_AIRPORTS: Airport[] = [
   { code: "BFS", name: "Belfast International", city: "Belfast", lat: 54.658, lon: -6.216, localReturnPP: 15, parkingPerDay: 9, size: 2 },
   { code: "BHD", name: "Belfast City", city: "Belfast", lat: 54.618, lon: -5.873, localReturnPP: 5, parkingPerDay: 11, size: 1 },
 ];
-
-const byCode = new Map(UK_AIRPORTS.map((a) => [a.code, a]));
-
-export function getAirport(code: string): Airport | undefined {
-  return byCode.get(code.toUpperCase());
-}
 
 /** Straight-line distance in km. */
 export function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {

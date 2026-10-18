@@ -11,8 +11,11 @@ added to the home screen.
 
 ## What's in it
 
-- **Search:** home airport (remembered), nearby airports by travel time, extra
-  airports, "use my location", a destination list or "anywhere under £X",
+- **Search from and to anywhere:** 3,180 airports worldwide with type-ahead
+  search, cities with several airports (e.g. "London (all airports)"), home
+  airport remembered, nearby airports by travel time, extra airports, "use my
+  location", a destination list or "anywhere in budget" (popular places within
+  sensible flying range for the trip length),
   exact/flexible/window dates, weekend-only option, travellers, bags,
   accommodation type, rating and distance filters
 - **Describe your trip** box: type it in plain English ("2 of us from Bristol,
@@ -28,6 +31,11 @@ added to the home screen.
   that route in your search, with their own Deals tab
 - **Where to stay, weighed up:** central vs cheapest vs further out, with
   day-ticket costs included and pros and cons for each
+- **Your currency:** prices shown in 32 currencies using daily European Central
+  Bank rates, plus a tip to pay in the local currency with a no-fee card
+- **Honest distances:** stays show km from the centre with a plain label
+  ("In the centre", "Near the centre", "Outskirts"), estimated travel time
+  marked as an estimate, and a map link
 - **Ways to save:** compromises on the top trip (different dates, a night
   less, another airport, staying further out, no checked bags, another city)
 - **Best value / Cheapest** sort toggle

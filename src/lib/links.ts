@@ -1,6 +1,5 @@
 // Booking links. Each opens the provider's own site with details pre-filled.
 
-import type { Destination } from "./data/destinations";
 
 function ddmm(date: string): string {
   return date.slice(8, 10) + date.slice(5, 7);
@@ -52,7 +51,7 @@ export function hotelSearchUrl(
   return url.toString();
 }
 
-export function airbnbUrl(dest: Destination, checkin: string, checkout: string, adults: number, children: number): string {
+export function airbnbUrl(dest: { name: string; country: string }, checkin: string, checkout: string, adults: number, children: number): string {
   const place = encodeURIComponent(`${dest.name}, ${dest.country}`).replace(/%20/g, "-");
   const url = new URL(`https://www.airbnb.co.uk/s/${place}/homes`);
   url.searchParams.set("checkin", checkin);
@@ -60,4 +59,9 @@ export function airbnbUrl(dest: Destination, checkin: string, checkout: string, 
   url.searchParams.set("adults", String(adults));
   if (children > 0) url.searchParams.set("children", String(children));
   return url.toString();
+}
+
+/** Google Maps pin for a stay, so people can see exactly where it is. */
+export function mapUrl(lat: number, lon: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(5)},${lon.toFixed(5)}`;
 }

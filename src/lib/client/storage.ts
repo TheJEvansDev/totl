@@ -8,6 +8,7 @@ const SAVED_KEY = "totl.saved.v1";
 
 export interface Prefs {
   homeAirport?: string;
+  currency?: string;
 }
 
 export interface SavedSearch {

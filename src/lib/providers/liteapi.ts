@@ -3,6 +3,7 @@
 // live rates for the best-rated candidates on the exact dates.
 
 import type { Destination } from "../data/destinations";
+import { estimatedMinutes } from "../area";
 import { haversineKm } from "../data/airports";
 import { hotelSearchUrl } from "../links";
 import type { StayOption } from "../types";
@@ -21,30 +22,37 @@ interface LiteHotel {
   lon: number;
 }
 
-const hotelCache = new TtlCache<LiteHotel[]>(7 * 86_400_000);
+const hotelCache = new TtlCache<{ hotels: LiteHotel[]; centre: { lat: number; lon: number } }>(7 * 86_400_000);
 const rateCache = new TtlCache<Map<string, { total: number; refundable: boolean | null }>>(3 * 3_600_000);
 
-/** Rough public transport minutes from the centre for a straight-line distance. */
-export function centreMinutes(km: number): number {
-  return Math.round(4 + km * 4.5);
-}
 
 function looksLikeApartment(name: string): boolean {
   return /apart|flat|suites?\b|residence|loft|studio/i.test(name);
 }
 
-async function cityHotels(key: string, dest: Destination): Promise<LiteHotel[]> {
+const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+
+/**
+ * Hotels in a city and where its centre is. Hand-entered destinations have a
+ * known centre; for others we only know the airport, so we search by city name
+ * and take the middle of where hotels cluster as the centre.
+ */
+async function cityHotels(key: string, dest: Destination) {
   return hotelCache.get(dest.code, async () => {
     const url = new URL(`${API}/data/hotels`);
     url.searchParams.set("countryCode", dest.countryCode);
-    url.searchParams.set("latitude", String(dest.lat));
-    url.searchParams.set("longitude", String(dest.lon));
-    url.searchParams.set("radius", "8000");
-    url.searchParams.set("limit", "300");
+    if (dest.centreKnown === false) {
+      url.searchParams.set("cityName", dest.name);
+    } else {
+      url.searchParams.set("latitude", String(dest.lat));
+      url.searchParams.set("longitude", String(dest.lon));
+      url.searchParams.set("radius", "9000");
+    }
+    url.searchParams.set("limit", "400");
     const res = await fetch(url, { headers: { "X-API-Key": key, accept: "application/json" }, next: { revalidate: 86_400 } });
     if (!res.ok) throw new Error(`LiteAPI hotels ${res.status}`);
     const body = (await res.json()) as { data?: Record<string, unknown>[] };
-    return (body.data ?? [])
+    const hotels = (body.data ?? [])
       .map((h) => ({
         id: String(h.id ?? ""),
         name: String(h.name ?? "Hotel"),
@@ -53,6 +61,11 @@ async function cityHotels(key: string, dest: Destination): Promise<LiteHotel[]> 
         lon: Number(h.longitude),
       }))
       .filter((h) => h.id && Number.isFinite(h.lat) && Number.isFinite(h.lon));
+    const centre =
+      dest.centreKnown === false && hotels.length >= 10
+        ? { lat: median(hotels.map((h) => h.lat)), lon: median(hotels.map((h) => h.lon)) }
+        : { lat: dest.lat, lon: dest.lon };
+    return { hotels, centre };
   });
 }
 
@@ -95,13 +108,19 @@ export function liteapiStays(key: string): StayProvider {
     sample: false,
     async search(q: StayQuery): Promise<StayOption[]> {
       const { destination: dest, checkin, checkout, adults, children, prefs } = q;
-      const centre = { lat: dest.lat, lon: dest.lon };
-      const candidates = (await cityHotels(key, dest))
-        .map((h) => ({ ...h, centreMins: centreMinutes(haversineKm(centre, h)), type: looksLikeApartment(h.name) ? "apartment" as const : "hotel" as const }))
-        .filter((h) => (h.rating ?? 0) >= prefs.minRating && h.centreMins <= prefs.maxCentreMins)
+      const { hotels, centre } = await cityHotels(key, dest);
+      const candidates = hotels
+        .map((h) => {
+          const km = Math.round(haversineKm(centre, h) * 10) / 10;
+          return { ...h, centreKm: km, centreMins: estimatedMinutes(km), type: looksLikeApartment(h.name) ? ("apartment" as const) : ("hotel" as const) };
+        })
+        .filter((h) => (h.rating ?? 0) >= prefs.minRating && h.centreKm <= prefs.maxCentreKm)
         .filter((h) => prefs.type === "any" || h.type === prefs.type)
-        .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-        .slice(0, MAX_RATE_HOTELS);
+        .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+      // Price a mix: mostly close in, some further out for the comparison.
+      const close = candidates.filter((c) => c.centreKm <= 4).slice(0, MAX_RATE_HOTELS - 12);
+      const further = candidates.filter((c) => c.centreKm > 4).slice(0, MAX_RATE_HOTELS - close.length);
+      candidates.splice(0, candidates.length, ...close, ...further);
       if (candidates.length === 0) return [];
 
       const rateKey = `${dest.code}|${checkin}|${checkout}|${adults}|${children}|${candidates.map((c) => c.id).join(",")}`;
@@ -133,7 +152,10 @@ export function liteapiStays(key: string): StayProvider {
             name: c.name,
             type: c.type,
             rating: c.rating,
+            centreKm: c.centreKm,
             centreMins: c.centreMins,
+            lat: c.lat,
+            lon: c.lon,
             total: Math.round(rate.total),
             freeCancellation: rate.refundable,
             bookingUrl: hotelSearchUrl(`${c.name}, ${dest.name}`, checkin, checkout, adults, children, roomsNeeded(adults)),

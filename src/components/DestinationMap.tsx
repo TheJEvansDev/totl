@@ -3,7 +3,7 @@
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef } from "react";
 import { money } from "@/lib/client/format";
-import { getDestination } from "@/lib/data/destinations";
+import { cityName, place } from "@/lib/client/places";
 import type { DestinationSummary } from "@/lib/types";
 
 export function DestinationMap({ items, onPick }: { items: DestinationSummary[]; onPick: (tripId: string) => void }) {
@@ -24,13 +24,13 @@ export function DestinationMap({ items, onPick }: { items: DestinationSummary[];
       // Items arrive cheapest first. Only the cheapest few get a permanent label
       // so they don't pile on top of each other; the rest show on hover.
       items.forEach((item, i) => {
-        const d = getDestination(item.code);
+        const d = place(item.code);
         if (!d) return;
         points.push([d.lat, d.lon]);
         const top = i < 5;
         L.circleMarker([d.lat, d.lon], { radius: top ? 8 : 6, color: "#ffffff", weight: 2, fillColor: top ? "#104281" : "#5598e7", fillOpacity: 1 })
           .addTo(map)
-          .bindTooltip(`${d.name} ${money(item.perPerson)}`, { permanent: top, direction: "top", className: "map-label", offset: [0, -6] })
+          .bindTooltip(`${cityName(item.code)} ${money(item.perPerson)}`, { permanent: top, direction: "top", className: "map-label", offset: [0, -6] })
           .on("click", () => onPick(item.bestTripId));
       });
       if (points.length > 0) map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 6 });

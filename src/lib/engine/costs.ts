@@ -2,9 +2,11 @@
 
 import { PENALTIES as P } from "../config/penalties";
 import type { Airport } from "../data/airports";
-import { getAirport, haversineKm, travelHours } from "../data/airports";
+import { haversineKm, travelHours } from "../data/airports";
+import { formatKm } from "../area";
+import { dayTicketFor, getAirport } from "../data/places";
 import type { Destination } from "../data/destinations";
-import { airlineName, checkedBagFee, dayTicketPP } from "../data/destinations";
+import { airlineName, checkedBagFee } from "../data/destinations";
 import { localHour } from "../dates";
 import type { BagOption, FlightOption, Penalty, StayOption, TravellerGroup } from "../types";
 
@@ -86,10 +88,12 @@ export function assessFlight(flight: FlightOption, dest: Destination, people: nu
   const flags: string[] = [];
   const add = (label: string, amount: number) => amount > 0 && penalties.push({ label, amount: Math.round(amount) });
 
-  const outDep = localHour(flight.outDepart, "Europe/London");
+  const homeTz = getAirport(flight.origin)?.tz ?? "Europe/London";
+  const backTz = getAirport(flight.returnAirport)?.tz ?? homeTz;
+  const outDep = localHour(flight.outDepart, homeTz);
   const retDep = localHour(flight.retDepart, dest.tz);
   const outArr = localHour(flight.outArrive, dest.tz);
-  const retArr = localHour(flight.retArrive, "Europe/London");
+  const retArr = localHour(flight.retArrive, backTz);
 
   if (outDep < P.earlyDepartureBeforeHour) {
     add(`Early start (${fmtTime(outDep)} departure)`, P.earlyDeparturePP * people);
@@ -133,9 +137,9 @@ export function assessFlight(flight: FlightOption, dest: Destination, people: nu
 }
 
 /** Day tickets into the centre for a stay too far out to walk, all travellers. */
-export function stayTransportCost(stay: StayOption, destCode: string, nights: number, people: number): number {
-  if (stay.centreMins === null || stay.centreMins <= P.walkableMins) return 0;
-  return Math.round(dayTicketPP(destCode) * people * nights);
+export function stayTransportCost(stay: StayOption, dest: Destination, nights: number, people: number): number {
+  if (stay.centreKm === null || stay.centreKm <= P.walkableKm) return 0;
+  return Math.round(dayTicketFor(dest) * people * nights);
 }
 
 export function assessStay(stay: StayOption, nights: number, people: number): Penalty[] {
@@ -146,7 +150,7 @@ export function assessStay(stay: StayOption, nights: number, people: number): Pe
   if (stay.centreMins !== null && stay.centreMins > P.centreFreeMins) {
     const hours = ((stay.centreMins - P.centreFreeMins) * 2 * nights) / 60;
     out.push({
-      label: `${stay.centreMins} mins from the centre (~${Math.round((stay.centreMins * 2 * nights) / 60)} hrs travelling over the trip)`,
+      label: `${formatKm(stay.centreKm ?? 0)} from the centre (~${Math.round((stay.centreMins * 2 * nights) / 60)} hrs travelling over the trip, est.)`,
       amount: Math.round(hours * P.commuteHourPP * people),
     });
   }

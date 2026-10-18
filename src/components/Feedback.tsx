@@ -27,7 +27,7 @@ export function Feedback() {
 
   return (
     <>
-      <button className="btn btn-small feedback-fab" onClick={() => { setOpen(true); setState("idle"); }}>
+      <button type="button" className="btn btn-small feedback-btn" onClick={() => { setOpen(true); setState("idle"); }}>
         💬 Feedback
       </button>
       {open && (

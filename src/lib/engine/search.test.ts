@@ -4,8 +4,7 @@ import { addDays, localHour, localToUtc, todayUK } from "../dates";
 import { sampleFlights, sampleStays } from "../providers/sample";
 import { _internal as lite } from "../providers/liteapi";
 import { _internal as tp } from "../providers/travelpayouts";
-import { getAirport } from "../data/airports";
-import { getDestination } from "../data/destinations";
+import { getAirport, getDestination } from "../data/places";
 import { parseRequest, expandDates } from "./request";
 import { candidateAirports, runSearch } from "./search";
 
@@ -18,7 +17,7 @@ function request(overrides: Record<string, unknown> = {}) {
     destination: { mode: "cities", cities: ["BCN"] },
     dates: { mode: "window", from: start, to: addDays(start, 27), minNights: 2, maxNights: 4, weekendsOnly: false },
     bags: "cabin",
-    stay: { type: "any", minRating: 7.5, maxCentreMins: 20 },
+    stay: { type: "any", minRating: 7.5, maxCentreKm: 4 },
     ...overrides,
   };
 }
@@ -140,7 +139,7 @@ test("sample accommodation has options matching the default filters in every cit
   const { DESTINATIONS } = await import("../data/destinations");
   const empty: string[] = [];
   for (const d of DESTINATIONS) {
-    const r = await sampleStays.search({ destination: d, checkin: start, checkout: addDays(start, 2), adults: 2, children: 0, prefs: { type: "any", minRating: 7.5, maxCentreMins: 20 } });
+    const r = await sampleStays.search({ destination: d, checkin: start, checkout: addDays(start, 2), adults: 2, children: 0, prefs: { type: "any", minRating: 7.5, maxCentreKm: 4 } });
     if (r.length === 0) empty.push(d.code);
   }
   assert.deepEqual(empty, []);
@@ -191,11 +190,12 @@ test("accommodation comparison lists further-out options with pros and cons", as
   assert.ok(withAlts.length > 0);
   const t = withAlts[0];
   assert.equal(t.stayAlternatives[0].label, "Chosen");
-  assert.ok(t.stay.centreMins === null || t.stay.centreMins <= 20, "chosen stay respects the filter");
+  assert.ok(t.stay.centreKm === null || t.stay.centreKm <= 4, "chosen stay respects the filter");
   const further = res.trips.flatMap((x) => x.stayAlternatives).find((a) => a.label === "Further out");
   assert.ok(further, "a further-out option is offered");
-  assert.ok(further.cons.some((c) => c.includes("mins each way")));
-  console.log("further out:", further.stay.name, further.stay.centreMins, "mins, net", further.netVsChosen, "|", further.pros.concat(further.cons).join("; "));
+  assert.ok(further.cons.some((c) => c.includes("km from the centre")));
+  assert.ok(further.stay.centreKm! <= 7, "never suggests anywhere remote");
+  console.log("further out:", further.stay.name, further.stay.centreKm, "km, net", further.netVsChosen, "|", further.pros.concat(further.cons).join("; "));
 });
 
 test("flags deals well below the typical price", async () => {
@@ -227,7 +227,7 @@ test("suggests compromises that save money against the top trip", async () => {
 });
 
 test("an AI plan becomes a valid search", async () => {
-  const { planToRequest } = await import("../../components/PlanBox");
+  const { planToRequest } = await import("../ai/toRequest");
   const { defaultRequest } = await import("../../components/SearchForm");
   const plan = {
     summary: "Two of you from Bristol, somewhere warm in March for 4-5 nights, about £350 each",
@@ -251,7 +251,7 @@ test("an AI plan becomes a valid search", async () => {
     checkedBag: false,
     stayType: "apartment" as const,
     minRating: 0,
-    maxCentreMins: 0,
+    maxCentreKm: 0,
   };
   const req = planToRequest(plan, defaultRequest("MAN"));
   assert.equal(req.groups[0].homeAirport, "BRS");
@@ -262,4 +262,40 @@ test("an AI plan becomes a valid search", async () => {
   assert.ok(parsed.ok, parsed.ok ? "" : parsed.error);
   const res = await runSearch(parsed.value, providers);
   assert.ok(res.trips.length > 0);
+});
+
+test("place search finds airports and cities worldwide", async () => {
+  const { searchPlaces, getAirport: ga, nearbyAirports } = await import("../data/places");
+  assert.equal(searchPlaces("bristol", { cities: false })[0].code, "BRS");
+  assert.equal(searchPlaces("new york", { cities: true })[0].code, "NYC");
+  assert.equal(searchPlaces("LHR", { cities: false })[0].code, "LHR");
+  assert.equal(searchPlaces("málaga", { cities: true })[0].code, "AGP");
+  // Every UK airport with scheduled flights is there, not just the hand-entered ones.
+  for (const code of ["JER", "GCI", "IOM", "SOU", "NQY", "DND", "KOI", "LSI", "BHD", "LDY"]) assert.ok(ga(code), `${code} missing`);
+  const near = nearbyAirports(ga("MAN")!, "GB", 2).map((a) => a.code);
+  assert.ok(near.includes("LPL") && !near.includes("DUB"));
+});
+
+test("searches from outside the UK, including long-haul", async () => {
+  const parsed = parseRequest(
+    request({
+      groups: [{ homeAirport: "JFK", nearbyHours: 1.5, adults: 2 }],
+      destination: { mode: "anywhere", maxPerPerson: 3000 },
+      dates: { mode: "window", from: start, to: addDays(start, 20), minNights: 6, maxNights: 7, weekendsOnly: false },
+    }),
+  );
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, providers);
+  assert.ok(res.trips.length > 0);
+  const dests = new Set(res.trips.map((t) => t.destination));
+  assert.ok(res.places.JFK && res.places.JFK.tz === "America/New_York");
+  for (const t of res.trips.slice(0, 5)) assert.ok(res.places[t.destination], `no name for ${t.destination}`);
+  console.log("from JFK:", [...dests].slice(0, 8).join(", "), "| took", res.meta.tookMs, "ms");
+
+  const lh = parseRequest(request({ groups: [{ homeAirport: "LHR", adults: 1 }], destination: { mode: "cities", cities: ["BKK", "NYC"] }, dates: { mode: "window", from: start, to: addDays(start, 14), minNights: 7, maxNights: 9, weekendsOnly: false } }));
+  assert.ok(lh.ok);
+  const resLh = await runSearch(lh.value, providers);
+  assert.ok(resLh.trips.some((t) => t.destination === "BKK") && resLh.trips.some((t) => t.destination === "NYC"));
+  const bkk = resLh.trips.find((t) => t.destination === "BKK")!;
+  console.log("LHR-BKK:", `£${bkk.legs[0].flight.pricePerPerson} pp`, Math.round((Date.parse(bkk.legs[0].flight.outArrive) - Date.parse(bkk.legs[0].flight.outDepart)) / 3.6e6), "hrs");
 });

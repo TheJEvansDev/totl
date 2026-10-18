@@ -44,7 +44,8 @@ export type DateQuery =
 export interface StayPrefs {
   type: StayType;
   minRating: number; // 0-10
-  maxCentreMins: number;
+  /** Max straight-line distance from the centre, in km. */
+  maxCentreKm: number;
 }
 
 export interface SearchRequest {
@@ -90,7 +91,12 @@ export interface StayOption {
   name: string;
   type: "hotel" | "apartment";
   rating: number | null; // 0-10
+  /** Straight-line distance from the centre, in km. */
+  centreKm: number | null;
+  /** Estimated public transport minutes to the centre. */
   centreMins: number | null;
+  lat: number | null;
+  lon: number | null;
   total: number; // GBP for the whole stay
   freeCancellation: boolean | null;
   bookingUrl: string;
@@ -216,6 +222,8 @@ export interface Compromise {
 
 export interface SearchResponse {
   trips: Trip[];
+  /** Names, countries and time zones for every code in the results. */
+  places: Record<string, import("./data/places").PlaceInfo>;
   compromises: Compromise[];
   heatmap: Heatmap | null;
   destinations: DestinationSummary[];

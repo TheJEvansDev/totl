@@ -2,14 +2,15 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { destName, money, shortDate } from "@/lib/client/format";
+import { destName, money, setDisplayCurrency, shortDate, moneyText } from "@/lib/client/format";
+import { ensurePlaces, place, remember } from "@/lib/client/places";
+import { CURRENCIES, currencyLabel, defaultCurrency } from "@/lib/currency";
 import { type SavedSearch, addSaved, decodeSearch, encodeSearch, loadPrefs, loadSaved, removeSaved, savePrefs } from "@/lib/client/storage";
 import type { SearchRequest, SearchResponse, SortMode } from "@/lib/types";
-import type { Plan } from "@/lib/ai/plan";
 import { Compromises } from "./Compromises";
 import { Feedback } from "./Feedback";
 import { Heatmap } from "./Heatmap";
-import { PlanBox } from "./PlanBox";
+import { type PlanResult, PlanBox } from "./PlanBox";
 import { SearchForm, defaultRequest } from "./SearchForm";
 import { TripCard } from "./TripCard";
 import { TripDetail } from "./TripDetail";
@@ -41,7 +42,18 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
   const [openTrip, setOpenTrip] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedSearch[]>([]);
   const [toast, setToast] = useState("");
-  const [plan, setPlan] = useState<Plan | null>(null);
+  const [plan, setPlan] = useState<PlanResult | null>(null);
+  const [currency, setCurrency] = useState("GBP");
+  const [rates, setRates] = useState<Record<string, number>>({ GBP: 1 });
+  const [ratesNote, setRatesNote] = useState("");
+
+  function chooseCurrency(code: string, rateTable = rates) {
+    const rate = rateTable[code];
+    if (!rate) return;
+    setDisplayCurrency(code, rate);
+    setCurrency(code);
+    savePrefs({ currency: code });
+  }
 
   const run = useCallback(async (r: SearchRequest) => {
     if (!r.groups[0].homeAirport) {
@@ -65,6 +77,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Search failed.");
+      remember((body as SearchResponse).places);
       setRes(body as SearchResponse);
       setLastReq(r);
       setShown(15);
@@ -78,17 +91,53 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
   }, []);
 
   useEffect(() => {
-    setSaved(loadSaved());
+    const prefs = loadPrefs();
+    fetch("/api/rates")
+      .then((r) => r.json())
+      .then((body: { rates: Record<string, number>; date: string | null; source: string }) => {
+        setRates(body.rates);
+        setRatesNote(body.date ? `Exchange rates from the ${body.source}, ${body.date}` : "Approximate exchange rates");
+        if (prefs.currency && body.rates[prefs.currency]) {
+          setDisplayCurrency(prefs.currency, body.rates[prefs.currency]);
+          setCurrency(prefs.currency);
+        }
+      })
+      .catch(() => {});
+
+    const saved = loadSaved();
+    setSaved(saved);
     const q = new URLSearchParams(location.search).get("q");
     const shared = q ? decodeSearch(q) : null;
+    const codesOf = (r: SearchRequest) => [
+      ...r.groups.flatMap((g) => [g.homeAirport, g.returnTo, ...g.extraAirports]),
+      ...(r.destination.mode === "cities" ? r.destination.cities : []),
+    ];
     if (shared) {
-      setReq(shared);
-      run(shared);
+      ensurePlaces(codesOf(shared)).then(() => {
+        setReq({ ...shared });
+        run(shared);
+      });
       return;
     }
-    const prefs = loadPrefs();
-    if (prefs.homeAirport) setReq(defaultRequest(prefs.homeAirport));
+    if (prefs.homeAirport) {
+      const home = prefs.homeAirport;
+      ensurePlaces([home]).then(() => setReq(defaultRequest(home)));
+    }
   }, [run]);
+
+  // Default the currency to the home airport's country, unless the user picked one.
+  const home = req.groups[0].homeAirport;
+  useEffect(() => {
+    if (!home || loadPrefs().currency) return;
+    const p = place(home);
+    if (p) {
+      const code = defaultCurrency(p.countryCode);
+      if (rates[code]) {
+        setDisplayCurrency(code, rates[code]);
+        setCurrency(code);
+      }
+    }
+  }, [home, rates]);
 
   const trips = useMemo(() => {
     if (!res) return [];
@@ -137,7 +186,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
             setReq(r);
             setPlan(p);
             if (r.groups[0].homeAirport) run(r);
-            else setError("Which airport are you flying from? Choose it below and search.");
+            else setError("Which airport are you flying from? Choose it below, then search.");
           }}
         />
       )}
@@ -152,7 +201,18 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
           <span className="meta">Check the details below and change anything that&apos;s not right.</span>
         </div>
       )}
-      <SearchForm value={req} onChange={setReq} onSubmit={() => run(req)} busy={busy} />
+      <div className="currency-row">
+        <Feedback />
+        <label className="currency">
+          <span>Prices in</span>
+          <select value={currency} onChange={(e) => chooseCurrency(e.target.value)} aria-label="Currency">
+            {CURRENCIES.filter((c) => rates[c]).map((c) => (
+              <option key={c} value={c}>{currencyLabel(c)}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <SearchForm key={currency} value={req} onChange={setReq} onSubmit={() => run(req)} busy={busy} />
 
       {error && <p className="notice notice-bad" role="alert" style={{ marginTop: 12 }}>{error}</p>}
 
@@ -171,7 +231,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
             </p>
           )}
           {res.meta.warnings.map((w) => (
-            <p key={w} className="notice notice-info" style={{ margin: 0 }}>{w}</p>
+            <p key={w} className="notice notice-info" style={{ margin: 0 }}>{moneyText(w)}</p>
           ))}
 
           {trips.length > 0 && (
@@ -179,6 +239,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
               <div className="results-head">
                 <div className="meta">
                   Checked {res.meta.combinationsChecked.toLocaleString("en-GB")} trip combinations in {(res.meta.tookMs / 1000).toFixed(1)}s
+                  {currency !== "GBP" && ratesNote ? ` · ${ratesNote}` : ""}
                 </div>
                 <div className="row" style={{ gap: 6 }}>
                   <button className="btn btn-small" onClick={() => lastReq && setSaved(addSaved(describe(lastReq), lastReq))}>☆ Save</button>
@@ -274,7 +335,6 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
           {toast}
         </div>
       )}
-      <Feedback />
     </main>
   );
 }

@@ -34,7 +34,7 @@ export function estimateStayTotal(
   for (let i = 0; i < nights; i++) sum += nightFactor(dest, addDays(checkin, i));
   // Lower rating and longer distance thresholds open up cheaper options.
   const ratingFactor = 1 - Math.max(0, 7.5 - prefs.minRating) * 0.06;
-  const distanceFactor = prefs.maxCentreMins > 20 ? 0.92 : 1;
+  const distanceFactor = prefs.maxCentreKm > 4 ? 0.92 : prefs.maxCentreKm < 2 ? 1.12 : 1;
   const people = adults + children;
   const units =
     prefs.type === "apartment"
@@ -57,7 +57,10 @@ export function estimatedStay(
     name: `Typical ${prefs.minRating}+ rated ${prefs.type === "apartment" ? "apartment" : "hotel"} in ${dest.name}`,
     type: prefs.type === "apartment" ? "apartment" : "hotel",
     rating: null,
+    centreKm: null,
     centreMins: null,
+    lat: null,
+    lon: null,
     total: Math.round(estimateStayTotal(dest, checkin, checkout, adults, children, prefs)),
     freeCancellation: null,
     bookingUrl: hotelSearchUrl(`${dest.name}, ${dest.country}`, checkin, checkout, adults, children, roomsNeeded(adults)),

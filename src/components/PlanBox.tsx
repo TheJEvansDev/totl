@@ -1,49 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import type { Plan } from "@/lib/ai/plan";
-import { getAirport } from "@/lib/data/airports";
-import { getDestination } from "@/lib/data/destinations";
-import { addDays, isValidDate, todayUK } from "@/lib/dates";
+import { remember, type PlaceInfo } from "@/lib/client/places";
 import type { SearchRequest } from "@/lib/types";
 
-/** Turns Claude's plan into a search, keeping anything it left blank from the current form. */
-export function planToRequest(plan: Plan, current: SearchRequest): SearchRequest {
-  const g = current.groups[0];
-  const home = getAirport(plan.homeAirport)?.code ?? g.homeAirport;
-  const cities = plan.cities.map((c) => getDestination(c)?.code).filter((c): c is string => !!c);
-  const t = todayUK();
-  const from = isValidDate(plan.from) ? plan.from : addDays(t, 14);
-  const to = isValidDate(plan.to) ? plan.to : addDays(from, 30);
-  return {
-    groups: [
-      {
-        ...g,
-        homeAirport: home,
-        extraAirports: plan.extraAirports.map((c) => getAirport(c)?.code).filter((c): c is string => !!c && c !== home),
-        nearbyHours: plan.nearbyHours,
-        returnTo: getAirport(plan.returnTo)?.code ?? "",
-        mixAirports: true,
-        adults: Math.max(1, plan.adults),
-        children: Math.max(0, plan.children),
-      },
-    ],
-    destination:
-      plan.destinationMode === "cities" && cities.length > 0
-        ? { mode: "cities", cities }
-        : { mode: "anywhere", maxPerPerson: plan.maxPerPerson > 0 ? plan.maxPerPerson : 400 },
-    dates:
-      plan.dateMode === "window"
-        ? { mode: "window", from, to, minNights: Math.max(1, plan.minNights), maxNights: Math.max(plan.minNights, plan.maxNights), weekendsOnly: plan.weekendsOnly }
-        : plan.dateMode === "flexible"
-          ? { mode: "flexible", depart: from, return: to, flexDays: Math.min(3, Math.max(1, plan.flexDays)) }
-          : { mode: "fixed", depart: from, return: to },
-    bags: plan.checkedBag ? "checked" : "cabin",
-    stay: { type: plan.stayType, minRating: plan.minRating || 7.5, maxCentreMins: plan.maxCentreMins || 20 },
-  };
+export interface PlanResult {
+  summary: string;
+  assumptions: string[];
 }
 
-export function PlanBox({ current, onPlan }: { current: SearchRequest; onPlan: (r: SearchRequest, plan: Plan) => void }) {
+export function PlanBox({ current, onPlan }: { current: SearchRequest; onPlan: (r: SearchRequest, plan: PlanResult) => void }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -55,11 +21,12 @@ export function PlanBox({ current, onPlan }: { current: SearchRequest; onPlan: (
       const res = await fetch("/api/plan", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text, homeAirport: current.groups[0].homeAirport }),
+        body: JSON.stringify({ text, current }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Couldn't plan that.");
-      onPlan(planToRequest(body.plan as Plan, current), body.plan as Plan);
+      remember(body.places as Record<string, PlaceInfo>);
+      onPlan(body.request as SearchRequest, { summary: body.summary, assumptions: body.assumptions });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't plan that.");
     } finally {

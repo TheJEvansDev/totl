@@ -1,8 +1,7 @@
 // Validates and normalises a search request from the browser.
 
 import { LIMITS } from "../config/penalties";
-import { getAirport } from "../data/airports";
-import { DESTINATIONS, getDestination } from "../data/destinations";
+import { getAirport, getDestination, popularDestinations } from "../data/places";
 import { addDays, dayOfWeek, daysBetween, isValidDate, todayUK } from "../dates";
 import type { DateQuery, SearchRequest, TravellerGroup } from "../types";
 
@@ -28,7 +27,7 @@ export function parseRequest(raw: unknown): Parsed<SearchRequest> {
   for (const [i, g] of rawGroups.entries()) {
     const gr = (g ?? {}) as Record<string, unknown>;
     const home = getAirport(String(gr.homeAirport ?? ""));
-    if (!home) return { ok: false, error: "Choose a UK home airport." };
+    if (!home) return { ok: false, error: "Choose the airport you're flying from." };
     const extras = Array.isArray(gr.extraAirports)
       ? [...new Set(gr.extraAirports.map((c) => getAirport(String(c))?.code).filter((c): c is string => !!c && c !== home.code))]
       : [];
@@ -80,7 +79,8 @@ export function parseRequest(raw: unknown): Parsed<SearchRequest> {
       stay: {
         type: stayType,
         minRating: num(s.minRating, 0, 9.5, 7.5),
-        maxCentreMins: int(s.maxCentreMins, 5, 90, 20),
+        // Older saved searches used minutes; convert roughly.
+        maxCentreKm: num(s.maxCentreKm ?? (s.maxCentreMins !== undefined ? (Number(s.maxCentreMins) - 4) / 4.5 : undefined), 0.5, 15, 4),
       },
     },
   };
@@ -158,7 +158,10 @@ export function expandDates(q: DateQuery): DatePlan {
 }
 
 export function destinationList(req: SearchRequest) {
-  return req.destination.mode === "anywhere"
-    ? DESTINATIONS
-    : req.destination.cities.map((c) => getDestination(c)!).filter(Boolean);
+  if (req.destination.mode === "cities") return req.destination.cities.map((c) => getDestination(c)!).filter(Boolean);
+  // "Anywhere": popular places within a sensible flying distance for the trip length.
+  const d = req.dates;
+  const nights = d.mode === "window" ? d.maxNights : daysBetween(d.depart, d.return);
+  const maxKm = nights <= 4 ? 3500 : nights <= 8 ? 7000 : 12000;
+  return popularDestinations(getAirport(req.groups[0].homeAirport)!, maxKm);
 }

@@ -38,8 +38,8 @@ export const PENALTIES = {
   centreFreeMins: 12,
   /** Value of each hour spent commuting into the centre, per person (two trips a day). */
   commuteHourPP: 4,
-  /** A stay further out than this is too far for walking, so a day ticket is added to the cost. */
-  walkableMins: 15,
+  /** A stay further out than this (km) is too far to walk, so a day ticket is added to the cost. */
+  walkableKm: 2,
 
   /** Deals: how far below the typical price for the route a flight must be. */
   dealPctBelow: 0.3,
@@ -58,8 +58,8 @@ export const LIMITS = {
   maxCities: 12,
   /** How many trips get real accommodation prices (the rest use estimates). */
   stayLookups: 16,
-  /** Accommodation is fetched this far out so cheaper further-out options can be compared. */
-  stayCompareMins: 45,
+  /** Accommodation is fetched up to this far out (km) so cheaper options can be compared. Kept modest so we never suggest the middle of nowhere. */
+  stayCompareKm: 7,
   /** Destinations checked for "out from one airport, back into another" trips. */
   mixedAirportDestinations: 4,
   maxTravellers: 9,

@@ -22,6 +22,8 @@ export interface Destination {
   flightBase: number;
   flightMins: number;
   kind: "city" | "sun";
+  /** False when lat/lon is the airport rather than the city centre. */
+  centreKnown?: boolean;
 }
 
 export const DESTINATIONS: Destination[] = [
@@ -59,11 +61,7 @@ export const DESTINATIONS: Destination[] = [
   { code: "REK", name: "Reykjavík", country: "Iceland", countryCode: "IS", tz: "Atlantic/Reykjavik", lat: 64.147, lon: -21.942, transferOneWayPP: 25, hotelNightly: 170, flightBase: 150, flightMins: 180, kind: "city" },
 ];
 
-const byCode = new Map(DESTINATIONS.map((d) => [d.code, d]));
-
-export function getDestination(code: string): Destination | undefined {
-  return byCode.get(code.toUpperCase());
-}
+// Use getDestination() in places.ts to look destinations up: it covers the whole world.
 
 /** Airline names and estimated checked-bag fee per bag per direction (GBP). */
 export const AIRLINES: Record<string, { name: string; checkedBag: number }> = {
@@ -81,12 +79,39 @@ export const AIRLINES: Record<string, { name: string; checkedBag: number }> = {
   TK: { name: "Turkish Airlines", checkedBag: 0 },
   FI: { name: "Icelandair", checkedBag: 40 },
   PC: { name: "Pegasus", checkedBag: 30 },
+  VS: { name: "Virgin Atlantic", checkedBag: 0 },
+  AA: { name: "American Airlines", checkedBag: 0 },
+  DL: { name: "Delta", checkedBag: 0 },
+  UA: { name: "United", checkedBag: 0 },
+  EK: { name: "Emirates", checkedBag: 0 },
+  QR: { name: "Qatar Airways", checkedBag: 0 },
+  EY: { name: "Etihad", checkedBag: 0 },
+  SQ: { name: "Singapore Airlines", checkedBag: 0 },
+  CX: { name: "Cathay Pacific", checkedBag: 0 },
+  AF: { name: "Air France", checkedBag: 35 },
+  IB: { name: "Iberia", checkedBag: 35 },
+  AY: { name: "Finnair", checkedBag: 35 },
+  SK: { name: "SAS", checkedBag: 35 },
+  LX: { name: "Swiss", checkedBag: 35 },
+  OS: { name: "Austrian", checkedBag: 35 },
+  AC: { name: "Air Canada", checkedBag: 0 },
+  QF: { name: "Qantas", checkedBag: 0 },
+  B6: { name: "JetBlue", checkedBag: 40 },
+  WN: { name: "Southwest", checkedBag: 0 },
+  NK: { name: "Spirit", checkedBag: 45 },
+  JL: { name: "Japan Airlines", checkedBag: 0 },
+  TG: { name: "Thai Airways", checkedBag: 0 },
+  "6E": { name: "IndiGo", checkedBag: 25 },
+  FZ: { name: "flydubai", checkedBag: 30 },
+  AI: { name: "Air India", checkedBag: 0 },
+  MS: { name: "EgyptAir", checkedBag: 0 },
+  AT: { name: "Royal Air Maroc", checkedBag: 30 },
 };
 
-/** Public transport day ticket per person (GBP, est.). Default for unlisted cities. */
+/** Public transport day ticket per person (GBP, est.) where known. */
 const DAY_TICKETS: Record<string, number> = { AMS: 8, PAR: 8, CPH: 10, BER: 9, MUC: 8, VIE: 7, DUB: 8, REK: 10, BRU: 7, MIL: 7, ROM: 6, VCE: 22 };
-export function dayTicketPP(code: string): number {
-  return DAY_TICKETS[code] ?? 5;
+export function dayTicketOverride(code: string): number | undefined {
+  return DAY_TICKETS[code];
 }
 
 export function airlineName(code: string): string {
