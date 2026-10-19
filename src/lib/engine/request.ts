@@ -54,7 +54,7 @@ export function parseRequest(raw: unknown): Parsed<SearchRequest> {
   const d = (r.destination ?? {}) as Record<string, unknown>;
   let destination: SearchRequest["destination"];
   if (d.mode === "anywhere") {
-    destination = { mode: "anywhere", maxPerPerson: num(d.maxPerPerson, 50, 5000, 300) };
+    destination = { mode: "anywhere", maxPerPerson: num(d.maxPerPerson, 1, 50000, 300) };
   } else {
     const cities = Array.isArray(d.cities)
       ? [...new Set(d.cities.map((c) => getDestination(String(c))?.code).filter((c): c is string => !!c))]

@@ -351,3 +351,4 @@ button.save-row { cursor: pointer; }
   background: linear-gradient(to top, var(--bg) 70%, transparent);
 }
 @media (prefers-reduced-transparency: reduce) { .submit-bar { background: var(--bg); } }
+.input-error { color: var(--bad); font-size: 0.8125rem; padding-right: 12px; white-space: nowrap; }

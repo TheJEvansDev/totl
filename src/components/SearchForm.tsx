@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DISTANCE_CHOICES } from "@/lib/area";
 import { displayCurrency, fromGbp, toGbp } from "@/lib/client/format";
 import { type PlaceInfo, airportName, cityName, place, remember } from "@/lib/client/places";
@@ -55,6 +55,40 @@ function Pill({ code, city, onRemove }: { code: string; city?: boolean; onRemove
       <span className="pill-name">{name}{p ? `, ${p.country}` : ""}</span>
       <button type="button" className="pill-x" aria-label={`Remove ${name}`} onClick={onRemove}>×</button>
     </span>
+  );
+}
+
+/**
+ * Budget in the display currency. Keeps exactly what's typed (no rounding to
+ * steps, no jumping while converting) and passes the GBP amount up.
+ */
+function BudgetInput({ gbp, onChange }: { gbp: number; onChange: (gbp: number) => void }) {
+  const [text, setText] = useState(String(fromGbp(gbp)));
+  // Follow changes from elsewhere (e.g. a saved search or the trip planner).
+  useEffect(() => {
+    if (Math.round(toGbp(Number(text))) !== gbp) setText(String(fromGbp(gbp)));
+    // Only react to the amount changing from outside.
+  }, [gbp]); // eslint-disable-line react-hooks/exhaustive-deps
+  const amount = Number(text);
+  const valid = text.trim() !== "" && Number.isFinite(amount) && amount > 0;
+  return (
+    <>
+      <input
+        className="input"
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        aria-invalid={!valid}
+        value={text}
+        onChange={(e) => {
+          const cleaned = e.target.value.replace(/[^\d]/g, "").slice(0, 6);
+          setText(cleaned);
+          const n = Number(cleaned);
+          if (cleaned && n > 0) onChange(Math.max(1, Math.round(toGbp(n))));
+        }}
+      />
+      {!valid && <span className="input-error">Enter an amount</span>}
+    </>
   );
 }
 
@@ -247,14 +281,9 @@ export function SearchForm({
             <span>Most you&apos;d spend per person, all in</span>
             <span className="input-prefix">
               <span aria-hidden="true">{cur}</span>
-              <input
-                className="input"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                step={10}
-                value={fromGbp(value.destination.maxPerPerson)}
-                onChange={(e) => onChange({ ...value, destination: { mode: "anywhere", maxPerPerson: Math.round(toGbp(Number(e.target.value))) } })}
+              <BudgetInput
+                gbp={value.destination.maxPerPerson}
+                onChange={(gbp) => onChange({ ...value, destination: { mode: "anywhere", maxPerPerson: gbp } })}
               />
             </span>
           </label>
