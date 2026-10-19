@@ -10,6 +10,7 @@ import type { SearchRequest, SearchResponse, SortMode } from "@/lib/types";
 import { Compromises } from "./Compromises";
 import { Feedback } from "./Feedback";
 import { Heatmap } from "./Heatmap";
+import { INTENT_LABEL, type Intent, IntentChooser } from "./IntentChooser";
 import { type PlanResult, PlanBox } from "./PlanBox";
 import { SearchForm, defaultRequest } from "./SearchForm";
 import { TripCard } from "./TripCard";
@@ -43,6 +44,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
   const [saved, setSaved] = useState<SavedSearch[]>([]);
   const [toast, setToast] = useState("");
   const [plan, setPlan] = useState<PlanResult | null>(null);
+  const [intent, setIntent] = useState<Intent | null>(null);
   // Remounting the form folds every step up (after a search, or a loaded/planned search).
   const [formKey, setFormKey] = useState(0);
   const [reviewing, setReviewing] = useState(false);
@@ -62,7 +64,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
     savePrefs({ currency: code });
   }
 
-  const run = useCallback(async (r: SearchRequest) => {
+  const run = useCallback(async (r: SearchRequest, lucky = false) => {
     if (!r.groups[0].homeAirport) {
       setError("Choose your home airport first.");
       return;
@@ -90,6 +92,9 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
       setLastReq(r);
       setShown(15);
       setTab("trips");
+      // "I'm feeling lucky": open the single best trip straight away.
+      const best = [...(body as SearchResponse).trips].sort((a, b) => a.smartScore - b.smartScore)[0];
+      if (lucky && best) setOpenTrip(best.id);
       requestAnimationFrame(() => document.getElementById("results")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Search failed.");
@@ -123,6 +128,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
     if (shared) {
       ensurePlaces(codesOf(shared)).then(() => {
         setReq({ ...shared });
+        setIntent(shared.destination.mode === "anywhere" ? "anywhere" : "pick");
         run(shared);
       });
       return;
@@ -187,12 +193,44 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
 
   return (
     <main className="shell">
-      {aiEnabled && (
+      <div className="currency-row">
+        <Feedback />
+        <label className="currency">
+          <span>Prices in</span>
+          <select value={currency} onChange={(e) => chooseCurrency(e.target.value)} aria-label="Currency">
+            {CURRENCIES.filter((c) => rates[c]).map((c) => (
+              <option key={c} value={c}>{currencyLabel(c)}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {intent === null ? (
+        <IntentChooser
+          aiEnabled={aiEnabled}
+          onChoose={(i) => {
+            setIntent(i);
+            setPlan(null);
+            setError("");
+            if (i === "pick") setReq((r) => ({ ...r, destination: r.destination.mode === "cities" ? r.destination : { mode: "cities", cities: [] } }));
+            if (i === "anywhere") setReq((r) => ({ ...r, destination: r.destination.mode === "anywhere" ? r.destination : { mode: "anywhere", maxPerPerson: 300 } }));
+            setReviewing(false);
+            setFormKey((k) => k + 1);
+          }}
+        />
+      ) : (
+        <div className="intent-bar">
+          <span>{INTENT_LABEL[intent]}</span>
+          <button type="button" className="btn-link" onClick={() => setIntent(null)}>Change</button>
+        </div>
+      )}
+      {aiEnabled && intent === "describe" && (
         <PlanBox
           current={req}
           onPlan={(r, p) => {
             setReq(r);
             setPlan(p);
+            setIntent(r.destination.mode === "anywhere" ? "anywhere" : "pick");
+            foldForm();
             if (r.groups[0].homeAirport) run(r);
             else setError("Which airport are you flying from? Choose it below, then search.");
           }}
@@ -209,18 +247,17 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
           <span className="meta">Check the details below and change anything that&apos;s not right.</span>
         </div>
       )}
-      <div className="currency-row">
-        <Feedback />
-        <label className="currency">
-          <span>Prices in</span>
-          <select value={currency} onChange={(e) => chooseCurrency(e.target.value)} aria-label="Currency">
-            {CURRENCIES.filter((c) => rates[c]).map((c) => (
-              <option key={c} value={c}>{currencyLabel(c)}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <SearchForm key={formKey} reviewing={reviewing} value={req} onChange={setReq} onSubmit={() => run(req)} busy={busy} />
+      {(intent === "pick" || intent === "anywhere") && (
+        <SearchForm
+          key={formKey}
+          reviewing={reviewing}
+          intent={intent}
+          value={req}
+          onChange={setReq}
+          onSubmit={(lucky) => run(req, lucky)}
+          busy={busy}
+        />
+      )}
 
       {error && <p className="notice notice-bad" role="alert" style={{ marginTop: 12 }}>{error}</p>}
 
@@ -321,7 +358,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
           <div className="section-label" style={{ margin: 0 }}>Saved searches</div>
           {saved.map((s) => (
             <div key={s.id} className="saved-row">
-              <button className="name" onClick={() => { setReq(s.request); run(s.request); }} title={s.name}>{s.name}</button>
+              <button className="name" onClick={() => { setReq(s.request); setIntent(s.request.destination.mode === "anywhere" ? "anywhere" : "pick"); run(s.request); }} title={s.name}>{s.name}</button>
               <button className="btn-link" aria-label={`Delete ${s.name}`} onClick={() => setSaved(removeSaved(s.id))}>Delete</button>
             </div>
           ))}

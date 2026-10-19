@@ -417,3 +417,23 @@ html { transition: background-color 0.25s ease; }
 .step-summary:hover { border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .step-open { animation: fade-in 0.15s ease; } }
 @media (max-width: 380px) { .brand-tag { display: none; } }
+
+/* First question: what would you like to do? */
+.intent { display: grid; gap: 14px; margin: 8px 0 4px; animation: step-in 0.32s cubic-bezier(0.32, 0.72, 0, 1); }
+.intent-title { margin: 0; font-size: 1.75rem; line-height: 1.15; letter-spacing: -0.025em; font-weight: 800; }
+.intent-options { display: grid; gap: 10px; }
+.intent-option {
+  display: flex; align-items: center; gap: 14px; width: 100%; padding: 16px; text-align: left;
+  font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--border);
+  transition: transform 0.1s ease-out, border-color 0.15s ease;
+}
+.intent-option:hover { border-color: var(--accent); }
+.intent-option:active { transform: scale(0.985); }
+.intent-option b { display: block; font-size: 1.0625rem; letter-spacing: -0.01em; }
+.intent-text { display: block; color: var(--text-2); font-size: 0.875rem; margin-top: 2px; line-height: 1.4; }
+.intent-icon { font-size: 1.6rem; width: 44px; height: 44px; display: grid; place-items: center; background: var(--accent-soft); border-radius: 12px; flex: none; }
+.intent-arrow { margin-left: auto; color: var(--muted); font-size: 1.5rem; flex: none; }
+.intent-bar { display: flex; justify-content: space-between; align-items: center; margin: 0 0 10px; font-weight: 700; font-size: 1.0625rem; letter-spacing: -0.01em; }
+.submit-pair { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.lucky { height: 46px; }
+@media (prefers-reduced-motion: reduce) { .intent { animation: fade-in 0.15s ease; } }

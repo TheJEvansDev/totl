@@ -236,6 +236,8 @@ interface Candidate {
 export async function runSearch(
   req: SearchRequest,
   providers: { flights: FlightProvider; stays: StayProvider },
+  /** Try nearby airports if nothing is found. Off for the widened retry itself. */
+  allowWiden = true,
 ): Promise<SearchResponse> {
   const started = Date.now();
   const warnings: string[] = [];
@@ -321,6 +323,16 @@ export async function runSearch(
     }
   }
   if (candidates.length === 0) {
+    // Nothing from their airport(s): rather than a dead end, widen to nearby airports.
+    for (const hours of allowWiden ? [2, 3] : []) {
+      if (!req.groups.some((g) => g.nearbyHours < hours)) continue;
+      const wider = { ...req, groups: req.groups.map((g) => ({ ...g, nearbyHours: Math.max(g.nearbyHours, hours) })) };
+      const res = await runSearch(wider, providers, false);
+      if (res.trips.length > 0) {
+        res.meta.warnings.unshift(`No flights from your airport on those dates, so we've included airports within ${hours} hours.`);
+        return res;
+      }
+    }
     return emptyResponse(providers, warnings, started, "No flights found for those dates and airports. Try nearby airports or more flexible dates.");
   }
 

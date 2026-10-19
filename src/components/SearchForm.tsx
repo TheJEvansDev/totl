@@ -151,10 +151,13 @@ export function SearchForm({
   onSubmit,
   busy,
   reviewing = false,
+  intent,
 }: {
   value: SearchRequest;
   onChange: (r: SearchRequest) => void;
-  onSubmit: () => void;
+  onSubmit: (lucky?: boolean) => void;
+  /** What they chose up front: a specific place or anywhere. Hides the switch between them. */
+  intent?: "pick" | "anywhere";
   busy: boolean;
   /** Start with every step folded up, e.g. for a shared link or a planned trip. */
   reviewing?: boolean;
@@ -371,15 +374,17 @@ export function SearchForm({
       </Step>
 
       {/* Where to */}
-      <Step {...stepProps(2)} title="Going to">
-        <Seg
-          label="Destination type"
-          value={value.destination.mode}
-          options={[["anywhere", "Anywhere in budget"], ["cities", "Choose places"]]}
-          onChange={(mode) =>
-            onChange({ ...value, destination: mode === "anywhere" ? { mode, maxPerPerson: 300 } : { mode, cities: [] } })
-          }
-        />
+      <Step {...stepProps(2)} title={intent === "pick" ? "Where are you going?" : intent === "anywhere" ? "Your budget" : "Going to"}>
+        {!intent && (
+          <Seg
+            label="Destination type"
+            value={value.destination.mode}
+            options={[["anywhere", "Anywhere in budget"], ["cities", "Choose places"]]}
+            onChange={(mode) =>
+              onChange({ ...value, destination: mode === "anywhere" ? { mode, maxPerPerson: 300 } : { mode, cities: [] } })
+            }
+          />
+        )}
         {value.destination.mode === "anywhere" ? (
           <label className="field budget">
             <span>Most you&apos;d spend per person, all in</span>
@@ -533,9 +538,20 @@ export function SearchForm({
 
       {canSearch && (
       <div className="submit-bar">
-        <button className="btn btn-primary btn-block" type="submit" disabled={busy || windowTooLong}>
-          {busy ? "Searching…" : "Find the cheapest trips"}
-        </button>
+        {value.destination.mode === "anywhere" ? (
+          <div className="submit-pair">
+            <button className="btn btn-primary btn-block" type="submit" disabled={busy || windowTooLong}>
+              {busy ? "Searching…" : "Show me the best places"}
+            </button>
+            <button className="btn btn-block lucky" type="button" disabled={busy || windowTooLong} onClick={() => onSubmit(true)}>
+              I&apos;m feeling lucky
+            </button>
+          </div>
+        ) : (
+          <button className="btn btn-primary btn-block" type="submit" disabled={busy || windowTooLong}>
+            {busy ? "Searching…" : "Find the cheapest trips"}
+          </button>
+        )}
       </div>
       )}
     </form>

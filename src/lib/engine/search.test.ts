@@ -346,3 +346,33 @@ test("booking buttons send budget airlines direct and compare full-service ones"
   assert.ok(ba[1].label === "Book direct with British Airways" && ba[1].note.includes("Search MAN to BCN, Fri 12 Mar to Mon 15 Mar"));
   assert.equal(bookingOptions("ZZ", q, "x", "r").length, 1);
 });
+
+test("widens to nearby airports when the home airport has no flights", async () => {
+  const { DESTINATIONS } = await import("../data/destinations");
+  // Find a destination Newquay (a small airport) doesn't fly to in the sample data.
+  let missing: string | null = null;
+  for (const d of DESTINATIONS) {
+    const p = parseRequest(request({ groups: [{ homeAirport: "NQY", nearbyHours: 0, adults: 1 }], destination: { mode: "cities", cities: [d.code] } }));
+    assert.ok(p.ok);
+    const direct = await sampleFlights.search({
+      origin: (await import("../data/places")).getAirport("NQY")!,
+      destinations: [d],
+      departFrom: start,
+      departTo: addDays(start, 27),
+      minNights: 2,
+      maxNights: 4,
+      adults: 1,
+      children: 0,
+    });
+    if (direct.length === 0) {
+      missing = d.code;
+      break;
+    }
+  }
+  assert.ok(missing, "a route Newquay doesn't serve");
+  const parsed = parseRequest(request({ groups: [{ homeAirport: "NQY", nearbyHours: 0, adults: 1 }], destination: { mode: "cities", cities: [missing] }, stay: { type: "none", minRating: 7.5, maxCentreKm: 4 } }));
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, providers);
+  assert.ok(res.trips.length > 0, "found trips from nearby airports");
+  assert.ok(/airports within [23] hours/.test(res.meta.warnings[0]));
+});

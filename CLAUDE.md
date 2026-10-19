@@ -38,6 +38,12 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   residency/card caveats.
 - Stay distance is measured in km (`src/lib/area.ts`); minutes are estimates
   and must be labelled as such.
+- First screen asks what they want (`IntentChooser.tsx`): a specific place
+  ("pick"), "Surprise me" (anywhere in budget, with "I'm feeling lucky" that
+  opens the best trip), or describe (AI). The form hides the destination-mode
+  switch once chosen.
+- If nothing is found, `runSearch` widens to airports within 2 then 3 hours
+  and says so (`allowWiden`).
 - `src/components/`: UI. `App.tsx` holds state; `Sheet.tsx` is the swipeable sheet;
   `SearchForm.tsx` is step-by-step (`Step`), folded after a search via `formKey`.
 - `src/lib/airlineSites.ts`: airline websites and Book buttons. Budget airlines
