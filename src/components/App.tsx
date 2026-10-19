@@ -367,6 +367,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
 
       {selected && res && lastReq && (
         <TripDetail
+          key={selected.id}
           trip={selected}
           sample={res.meta.sample}
           adults={lastReq.groups.reduce((s, g) => s + g.adults, 0)}

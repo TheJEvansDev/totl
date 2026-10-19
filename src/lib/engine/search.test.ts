@@ -376,3 +376,42 @@ test("widens to nearby airports when the home airport has no flights", async () 
   assert.ok(res.trips.length > 0, "found trips from nearby airports");
   assert.ok(/airports within [23] hours/.test(res.meta.warnings[0]));
 });
+
+test("sample one-way flights have sensible durations", async () => {
+  const { getAirport: ga, getDestination: gd } = await import("../data/places");
+  for (const direction of ["out", "back"] as const) {
+    const flights = await sampleFlights.searchOneWay({ direction, airport: ga("LHR")!, destinations: [gd("BER")!], dateFrom: start, dateTo: addDays(start, 6), adults: 1, children: 0 });
+    assert.ok(flights.length > 0);
+    for (const f of flights) {
+      const hours = (Date.parse(f.arrive) - Date.parse(f.depart)) / 3.6e6;
+      assert.ok(hours > 1 && hours < 3, `${direction} LHR-BER took ${hours} hrs`);
+    }
+  }
+});
+
+test("swapping in alternative flights or stays recalculates the trip", async () => {
+  const { swapFlights, swapStay } = await import("../customise");
+  const parsed = parseRequest(
+    request({ groups: [{ homeAirport: "BRS", extraAirports: ["STN", "LGW"], adults: 2 }], destination: { mode: "cities", cities: ["AMS"] } }),
+  );
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, providers);
+  const t = res.trips.find((x) => x.airportOptions.length > 1 && x.stayAlternatives.length > 1);
+  assert.ok(t, "a trip with both kinds of alternative");
+  const addUp = (x: typeof t) => assert.equal(x.total, Math.round(x.costs.reduce((s, c) => s + c.amount, 0)));
+
+  const other = t.airportOptions.find((o) => o.leg.flight.id !== t.legs[0].flight.id)!;
+  const swapped = swapFlights(t, other);
+  addUp(swapped);
+  assert.equal(swapped.legs[0].flight.id, other.leg.flight.id);
+  // The change in total matches what the option said it would be.
+  assert.ok(Math.abs(swapped.total - t.total - other.totalDelta) <= 2, `${swapped.total - t.total} vs ${other.totalDelta}`);
+  assert.equal(swapped.stay.id, t.stay.id, "stay unchanged");
+
+  const alt = t.stayAlternatives.find((a) => a.stay.id !== t.stay.id)!;
+  const both = swapStay(swapped, alt);
+  addUp(both);
+  assert.equal(both.stay.id, alt.stay.id);
+  assert.equal(both.legs[0].flight.id, other.leg.flight.id, "flights kept");
+  assert.ok(Math.abs(both.total - swapped.total - alt.netVsChosen) <= 2, `${both.total - swapped.total} vs ${alt.netVsChosen}`);
+});

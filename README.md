@@ -38,6 +38,9 @@ added to the home screen.
 - **Starts by asking what you want:** "I know where I'm going", "Surprise
   me" (with "I'm feeling lucky", which opens the single best trip) or
   "Describe my trip"
+- **Make the trip yours:** tap any other airport combination or place to
+  stay to swap it in; the total, breakdown, times and Book buttons update,
+  with "Back to our pick" to undo
 - **No dead ends:** if your airport has nothing, it widens to airports within
   2, then 3 hours, and tells you
 - **Step by step:** one section at a time, finished ones fold into a summary;

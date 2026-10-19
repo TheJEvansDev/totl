@@ -129,6 +129,9 @@ export interface StayAlternative {
   netVsChosen: number;
   pros: string[];
   cons: string[];
+  /** Cost lines and penalties for this stay, so it can be swapped in. */
+  costs: CostLine[];
+  penalties: Penalty[];
 }
 
 /** Same trip with a different pair of airports, for comparison. */
@@ -143,6 +146,10 @@ export interface AirportOption {
   flags: string[];
   bookingUrl: string;
   returnBookingUrl: string | null;
+  /** Everything needed to swap these flights into the trip. */
+  leg: GroupLeg;
+  costs: CostLine[];
+  penalties: Penalty[];
 }
 
 /** The same flights priced on another country's booking site. */
@@ -165,15 +172,21 @@ export interface Deal {
   pctBelow: number;
 }
 
+/** What part of the trip a cost or penalty belongs to, so parts can be swapped. */
+export type PartKind = "flight" | "stay";
+
 export interface CostLine {
   label: string;
   amount: number;
   estimated: boolean;
+  /** "flight": flights, bags and getting to the airports. "stay": accommodation and local transport. */
+  kind?: PartKind;
 }
 
 export interface Penalty {
   label: string;
   amount: number;
+  kind?: PartKind;
 }
 
 export interface GroupLeg {

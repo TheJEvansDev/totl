@@ -93,6 +93,44 @@ function evaluateLeg(group: TravellerGroup, flight: FlightOption, dest: Destinat
 
 const sum = (ps: Penalty[]) => ps.reduce((s, p) => s + p.amount, 0);
 
+const plural = (n: number) => `${n} night${n > 1 ? "s" : ""}`;
+
+/** Cost lines for one group's flights, bags and getting to and from the airports. */
+function legCostLines(l: LegChoice, dest: Destination, multi: boolean): CostLine[] {
+  const f = l.leg.flight;
+  const who = multi ? ` (${l.leg.groupId})` : "";
+  const route =
+    f.returnAirport !== f.origin
+      ? `Flights ${f.origin}–${dest.code}–${f.returnAirport}, two one-way tickets`
+      : f.returnBookingUrl
+        ? `Flights ${f.origin}–${dest.code}, two one-way tickets`
+        : `Flights ${f.origin}–${dest.code}, ${airlineName(f.airline)}`;
+  const lines: CostLine[] = [
+    { label: `${route}, ${l.leg.people} × {£${f.pricePerPerson}}${who}`, amount: f.pricePerPerson * l.leg.people, estimated: false, kind: "flight" },
+  ];
+  if (l.bags > 0) lines.push({ label: `Checked bags${who}`, amount: l.bags, estimated: true, kind: "flight" });
+  lines.push({ label: `${l.leg.groundNote}${who}`, amount: Math.round(l.ground), estimated: true, kind: "flight" });
+  return lines;
+}
+
+/** Cost lines for the accommodation and local transport into the centre. */
+function stayCostLines(stay: StayOption, stayEstimated: boolean, dest: Destination, nights: number, people: number): CostLine[] {
+  const lines: CostLine[] = [];
+  if (stay.source !== "none") {
+    lines.push({
+      label: stayEstimated ? `Accommodation, ${plural(nights)} (typical price)` : `${stay.name}, ${plural(nights)}`,
+      amount: stay.total,
+      estimated: stayEstimated,
+      kind: "stay",
+    });
+  }
+  const local = stayTransportCost(stay, dest, nights, people);
+  if (local > 0) lines.push({ label: `Day tickets into the centre, ${plural(nights)}`, amount: local, estimated: true, kind: "stay" });
+  return lines;
+}
+
+const asKind = (ps: Penalty[], kind: "flight" | "stay"): Penalty[] => ps.map((p) => ({ ...p, kind }));
+
 function buildTrip(
   id: string,
   dest: Destination,
@@ -107,37 +145,17 @@ function buildTrip(
   const nights = daysBetween(depart, ret);
   const people = legs.reduce((s, l) => s + l.leg.people, 0);
   const multi = legs.length > 1;
-  const plural = (n: number) => `${n} night${n > 1 ? "s" : ""}`;
-  const costs: CostLine[] = [];
-  for (const l of legs) {
-    const f = l.leg.flight;
-    const who = multi ? ` (${l.leg.groupId})` : "";
-    const route =
-      f.returnAirport !== f.origin
-        ? `Flights ${f.origin}–${dest.code}–${f.returnAirport}, two one-way tickets`
-        : f.returnBookingUrl
-          ? `Flights ${f.origin}–${dest.code}, two one-way tickets`
-          : `Flights ${f.origin}–${dest.code}, ${airlineName(f.airline)}`;
-    costs.push({ label: `${route}, ${l.leg.people} × {£${f.pricePerPerson}}${who}`, amount: f.pricePerPerson * l.leg.people, estimated: false });
-    if (l.bags > 0) costs.push({ label: `Checked bags${who}`, amount: l.bags, estimated: true });
-    costs.push({ label: `${l.leg.groundNote}${who}`, amount: Math.round(l.ground), estimated: true });
-  }
-  if (stay.source !== "none") {
-    costs.push({
-      label: stayEstimated ? `Accommodation, ${plural(nights)} (typical price)` : `${stay.name}, ${plural(nights)}`,
-      amount: stay.total,
-      estimated: stayEstimated,
-    });
-  }
-  const localTransport = stayTransportCost(stay, dest, nights, people);
-  if (localTransport > 0) costs.push({ label: `Day tickets into the centre, ${plural(nights)}`, amount: localTransport, estimated: true });
+  const costs: CostLine[] = [
+    ...legs.flatMap((l) => legCostLines(l, dest, multi)),
+    ...stayCostLines(stay, stayEstimated, dest, nights, people),
+  ];
   costs.push({
     label: `Airport transfers in ${dest.name}`,
     amount: Math.round(dest.transferOneWayPP * 2 * people),
     estimated: true,
   });
   const total = Math.round(costs.reduce((s, c) => s + c.amount, 0));
-  const penalties = [...legs.flatMap((l) => l.penalties), ...(stayEstimated ? [] : assessStay(stay, nights, people))];
+  const penalties = [...asKind(legs.flatMap((l) => l.penalties), "flight"), ...asKind(stayEstimated ? [] : assessStay(stay, nights, people), "stay")];
   const flags = [...new Set([...legs.flatMap((l) => l.flags), ...extraFlags])];
   if (stay.freeCancellation) flags.push("Free cancellation");
   return {
@@ -210,7 +228,16 @@ function chooseStay(
     if (o.rating !== null && o.rating < 7.5) cons.push(`Lower rated (${o.rating}/10)`);
     if (o.freeCancellation === true) pros.push("Free cancellation");
     if (o.freeCancellation === false) cons.push("Non-refundable");
-    return { label, stay: o, transportCost: transport(o), netVsChosen: Math.round(net), pros, cons };
+    return {
+      label,
+      stay: o,
+      transportCost: transport(o),
+      netVsChosen: Math.round(net),
+      pros,
+      cons,
+      costs: stayCostLines(o, false, dest, nights, people),
+      penalties: asKind(assessStay(o, nights, people), "stay"),
+    };
   };
   const alternatives = [describe("Chosen", pick)];
   for (const [label, o] of candidates) {
@@ -405,7 +432,7 @@ export async function runSearch(
       // Nothing available matching the filters: keep the trip but rank it lower.
       const trip = buildTrip(id, c.dest, c.depart, c.ret, c.legs, calibrated(c), true, ["No rooms matched your filters: typical price shown"]);
       const amount = Math.round(trip.stay.total * 0.25);
-      trip.penalties.push({ label: "No matching rooms found for these dates", amount });
+      trip.penalties.push({ label: "No matching rooms found for these dates", amount, kind: "stay" });
       trip.smartScore += amount;
       return trip;
     }
@@ -433,6 +460,9 @@ export async function runSearch(
         flags: l.flags.filter((f) => !f.startsWith("Back into")),
         bookingUrl: l.leg.flight.bookingUrl,
         returnBookingUrl: l.leg.flight.returnBookingUrl,
+        leg: l.leg,
+        costs: legCostLines(l, c.dest, false),
+        penalties: asKind(l.penalties, "flight"),
       }));
   }
 

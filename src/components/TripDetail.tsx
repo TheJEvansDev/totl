@@ -6,7 +6,9 @@ import { displayCurrency } from "@/lib/client/format";
 import { airportName, cityName, place, tzOf } from "@/lib/client/places";
 import { currencyForCountry } from "@/lib/currency";
 import { airlineName } from "@/lib/data/destinations";
+import { useState } from "react";
 import { bookingOptions } from "@/lib/airlineSites";
+import { flightCost, optionCost, stayCost, swapFlights, swapStay } from "@/lib/customise";
 import { airbnbUrl, mapUrl } from "@/lib/links";
 import type { Trip } from "@/lib/types";
 import { Sheet } from "./Sheet";
@@ -20,7 +22,28 @@ function localMoney(amount: number, currency: string): string {
   }
 }
 
-export function TripDetail({ trip, sample, adults, children, onClose }: { trip: Trip; sample: boolean; adults: number; children: number; onClose: () => void }) {
+/** Keyboard and pointer support for a card that can be picked. */
+function pickable(selected: boolean, onPick: () => void, label: string) {
+  return {
+    role: "button" as const,
+    tabIndex: 0,
+    "aria-pressed": selected,
+    "aria-label": label,
+    onClick: onPick,
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onPick();
+      }
+    },
+  };
+}
+
+export function TripDetail({ trip: original, sample, adults, children, onClose }: { trip: Trip; sample: boolean; adults: number; children: number; onClose: () => void }) {
+  // The trip as the traveller has customised it (swapped flights or stay).
+  const [trip, setTrip] = useState(original);
+  const customised = trip.legs[0].flight.id !== original.legs[0].flight.id || trip.stay.id !== original.stay.id;
+  const canSwapFlights = trip.legs.length === 1;
   const info = place(trip.destination);
   const dest = { name: cityName(trip.destination), country: info?.country ?? "" };
   const localCurrency = info ? currencyForCountry(info.countryCode) : undefined;
@@ -36,7 +59,22 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
       onClose={onClose}
     >
       {sample && <p className="notice notice-warn">Sample data: these prices are made up for testing.</p>}
-      <div className="trip-why">{moneyText(trip.why)}</div>
+      {customised ? (
+        <div className="notice notice-info custom-banner">
+          <span>
+            <b>Your version of this trip: {money(trip.total)}</b>
+            <br />
+            <span className="meta">
+              {trip.total === original.total
+                ? "Same price as our pick"
+                : `${trip.total > original.total ? "+" : "−"}${money(Math.abs(trip.total - original.total))} compared with our pick`}
+            </span>
+          </span>
+          <button type="button" className="btn-link" onClick={() => setTrip(original)}>Back to our pick</button>
+        </div>
+      ) : (
+        <div className="trip-why">{moneyText(trip.why)}</div>
+      )}
 
       <h3>Total trip cost</h3>
       <table className="breakdown">
@@ -109,13 +147,19 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
           <h3>Other airports for these dates</h3>
           <div className="options">
             {trip.airportOptions.map((o) => {
-              const chosen = o.out === trip.legs[0].flight.origin && o.back === trip.legs[0].flight.returnAirport;
+              const chosen = o.leg.flight.id === trip.legs[0].flight.id;
+              const delta = Math.round(optionCost(o) - flightCost(trip));
               const name = airportName;
+              const title = o.out === o.back ? `${name(o.out)} return` : `Out of ${name(o.out)}, home into ${name(o.back)}`;
               return (
-                <div key={`${o.out}>${o.back}`} className={`option${chosen ? " option-chosen" : ""}`}>
+                <div
+                  key={`${o.out}>${o.back}`}
+                  className={`option${chosen ? " option-chosen" : ""}${canSwapFlights ? " option-pick" : ""}`}
+                  {...(canSwapFlights ? pickable(chosen, () => setTrip(swapFlights(trip, o)), `Use ${title}`) : {})}
+                >
                   <div className="option-head">
-                    <b>{o.out === o.back ? `${name(o.out)} return` : `Out of ${name(o.out)}, home into ${name(o.back)}`}</b>
-                    <span className="tabular">{chosen ? "Chosen" : o.totalDelta === 0 ? "Same price" : `${o.totalDelta > 0 ? "+" : "−"}${money(Math.abs(o.totalDelta))}`}</span>
+                    <b>{title}</b>
+                    <span className="tabular">{chosen ? "✓ Selected" : delta === 0 ? "Same price" : `${delta > 0 ? "+" : "−"}${money(Math.abs(delta))}`}</span>
                   </div>
                   <div className="meta">
                     {money(o.pricePerPerson)} pp flights · {o.groundNote}
@@ -126,7 +170,9 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
               );
             })}
           </div>
-          <p className="fineprint">Prices include flights, bags and getting to and from the airports. Accommodation is the same for each.</p>
+          <p className="fineprint">
+            {canSwapFlights ? "Tap one to swap it into your trip. " : ""}Prices include flights, bags and getting to and from the airports.
+          </p>
         </>
       )}
 
@@ -165,13 +211,22 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
       {trip.stayAlternatives.length > 1 && (
         <>
           <h3>Where to stay: weighing it up</h3>
+          <p className="fineprint" style={{ marginTop: 0 }}>Tap one to swap it into your trip.</p>
           <div className="options">
-            {trip.stayAlternatives.map((a) => (
-              <div key={a.stay.id} className={`option${a.label === "Chosen" ? " option-chosen" : ""}`}>
+            {trip.stayAlternatives.map((a) => {
+              const chosen = a.stay.id === trip.stay.id;
+              const delta = Math.round(optionCost(a) - stayCost(trip));
+              const title = `${a.label === "Chosen" ? "Our pick" : a.label}: ${a.stay.name}`;
+              return (
+              <div
+                key={a.stay.id}
+                className={`option option-pick${chosen ? " option-chosen" : ""}`}
+                {...pickable(chosen, () => setTrip(swapStay(trip, a)), `Stay at ${a.stay.name}`)}
+              >
                 <div className="option-head">
-                  <b>{a.label === "Chosen" ? "Chosen" : a.label}: {a.stay.name}</b>
+                  <b>{title}</b>
                   <span className="tabular">
-                    {a.label === "Chosen" ? money(a.stay.total + a.transportCost) : `${a.netVsChosen > 0 ? "+" : "−"}${money(Math.abs(a.netVsChosen))}`}
+                    {chosen ? "✓ Selected" : delta === 0 ? "Same price" : `${delta > 0 ? "+" : "−"}${money(Math.abs(delta))}`}
                   </span>
                 </div>
                 <div className="meta">
@@ -184,14 +239,15 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
                   {a.pros.map((p) => <li key={p} className="pro">{moneyText(p)}</li>)}
                   {a.cons.map((c) => <li key={c} className="con">{moneyText(c)}</li>)}
                 </ul>
-                <span className="row" style={{ gap: 14 }}>
+                <span className="row" style={{ gap: 14 }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                   <a className="btn-link" href={a.stay.bookingUrl} target="_blank" rel="noopener noreferrer">Check this one</a>
                   {a.stay.lat !== null && a.stay.lon !== null && (
                     <a className="btn-link" href={mapUrl(a.stay.lat, a.stay.lon)} target="_blank" rel="noopener noreferrer">Map</a>
                   )}
                 </span>
               </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}

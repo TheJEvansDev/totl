@@ -118,7 +118,7 @@ export const sampleFlights: FlightProvider = {
       if (!servesRoute(q.airport, dest)) continue;
       const [cheapCarrier, altCarrier] = carriers(q.airport, dest);
       const stops = routeStops(q.airport, dest);
-      const mins = routeMins(q.airport, dest) + stops * 150;
+      const flightMins = routeMins(q.airport, dest) + stops * 150;
       const routeKey = `${q.airport.code}|${dest.code}`;
       const routeFactor = 0.85 + rand(`rf|${routeKey}`) * 0.3;
       for (let d = parseDate(q.dateFrom); d <= parseDate(q.dateTo); d += 86_400_000) {
@@ -137,8 +137,8 @@ export const sampleFlights: FlightProvider = {
           [cheapCarrier, EARLY_SLOTS[Math.floor(rand(`a|${key}`) * EARLY_SLOTS.length)], base * 0.85],
           [altCarrier, GOOD_SLOTS[Math.floor(rand(`b|${key}`) * GOOD_SLOTS.length)], base * 1.08],
         ];
-        options.forEach(([airline, mins, price], i) => {
-          const depart = localToUtc(date, mins, tz);
+        options.forEach(([airline, departMins, price], i) => {
+          const depart = localToUtc(date, departMins, tz);
           out.push({
             id: `s-${key}|${i}`,
             source: "sample",
@@ -147,7 +147,7 @@ export const sampleFlights: FlightProvider = {
             airline,
             date,
             depart,
-            arrive: new Date(Date.parse(depart) + mins * 60000).toISOString(),
+            arrive: new Date(Date.parse(depart) + flightMins * 60000).toISOString(),
             stops,
             layoverMins: stops * 90,
             price: Math.max(15, Math.round(price)),

@@ -437,3 +437,10 @@ html { transition: background-color 0.25s ease; }
 .submit-pair { display: grid; grid-template-columns: 1fr; gap: 8px; }
 .lucky { height: 46px; }
 @media (prefers-reduced-motion: reduce) { .intent { animation: fade-in 0.15s ease; } }
+
+/* Pickable alternatives */
+.option-pick { cursor: pointer; transition: transform 0.1s ease-out, border-color 0.15s ease, background-color 0.15s ease; }
+.option-pick:hover { border-color: var(--accent); }
+.option-pick:active { transform: scale(0.985); }
+.option-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.custom-banner { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
