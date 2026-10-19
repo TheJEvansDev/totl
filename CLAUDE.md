@@ -32,6 +32,10 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   `places` in search responses (`src/lib/client/places.ts`).
 - Money is GBP on the server. Server text writes amounts as `{£123}`; the UI
   converts with `moneyText()`/`money()` into the chosen currency (`/api/rates`, ECB).
+- Booking-country prices (`src/lib/markets.ts`, `checkBookingCountries` in
+  search.ts): top trips are re-priced on other countries' sites (Travelpayouts
+  `market` param). Shown as an option, never added to totals; always with the
+  residency/card caveats.
 - Stay distance is measured in km (`src/lib/area.ts`); minutes are estimates
   and must be labelled as such.
 - `src/components/`: UI. `App.tsx` holds state; `Sheet.tsx` is the swipeable sheet.

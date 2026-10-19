@@ -11,6 +11,14 @@ import type { Trip } from "@/lib/types";
 import { Sheet } from "./Sheet";
 import { flagTone } from "./TripCard";
 
+function localMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+  } catch {
+    return `${amount.toLocaleString("en-GB")} ${currency}`;
+  }
+}
+
 export function TripDetail({ trip, sample, adults, children, onClose }: { trip: Trip; sample: boolean; adults: number; children: number; onClose: () => void }) {
   const info = place(trip.destination);
   const dest = { name: cityName(trip.destination), country: info?.country ?? "" };
@@ -211,6 +219,43 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
           Compare on Airbnb
         </a>
       </div>
+      {trip.marketPrices.length > 0 && (
+        <>
+          <h3>Same flights, other booking sites</h3>
+          <p className="fineprint" style={{ marginTop: 0 }}>
+            Airlines and booking sites charge different prices depending on which country&apos;s version of the site you book on.
+          </p>
+          <div className="options">
+            <div className="option option-chosen">
+              <div className="option-head">
+                <b>Price shown above</b>
+                <span className="tabular">{money(trip.legs[0].flight.pricePerPerson)} pp</span>
+              </div>
+            </div>
+            {trip.marketPrices.map((m) => (
+              <div key={m.market} className="option">
+                <div className="option-head">
+                  <b>{m.countryName} site, pay in {m.currency}</b>
+                  <span className={`tabular ${m.saving > 0 ? "save-amount" : ""}`}>
+                    {m.saving > 0 ? `save ${money(m.saving)}${trip.people > 1 ? " total" : ""}` : m.saving < 0 ? `+${money(-m.saving)}` : "same"}
+                  </span>
+                </div>
+                <div className="meta">
+                  {localMoney(m.localAmount, m.currency)} pp ≈ {money(m.pricePerPerson)} pp in your currency
+                  {m.seenHoursAgo !== null ? ` · seen ${m.seenHoursAgo} hrs ago` : ""}
+                </div>
+                <a className="btn-link" href={m.bookingUrl} target="_blank" rel="noopener noreferrer sponsored">Check this price</a>
+              </div>
+            ))}
+          </div>
+          <p className="fineprint">
+            To get another country&apos;s price you may need to set the booking site&apos;s country and currency to that country. Pay in that
+            currency with a card that has no foreign transaction fees, or the saving can disappear. Some fares are only for residents of
+            that country, so check the fare rules before booking. Prices were found recently and can change.
+          </p>
+        </>
+      )}
+
       {payTip && (
         <p className="notice notice-info" style={{ marginTop: 10 }}>
           <b>Money tip:</b> if a site offers to charge you in {displayCurrency().code} instead of {payTip}, say no. Paying in {payTip} with a

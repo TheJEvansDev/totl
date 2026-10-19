@@ -19,6 +19,7 @@ import type {
   Deal,
   DestinationSummary,
   FlightOption,
+  MarketPrice,
   OneWayFlight,
   GroupLeg,
   Heatmap,
@@ -34,6 +35,8 @@ import type {
 import { mapLimit } from "../util";
 import { access, assessFlight, assessStay, bagCost, groundCost, stayTransportCost } from "./costs";
 import type { DatePlan } from "./request";
+import { marketByCode, marketsToCheck } from "../markets";
+import { getRates } from "../rates";
 import { placesForTrips } from "./places";
 import { destinationList, expandDates } from "./request";
 
@@ -146,6 +149,7 @@ function buildTrip(
     stayEstimated,
     stayAlternatives,
     airportOptions: [],
+    marketPrices: [],
     deal: null,
     costs,
     total,
@@ -440,6 +444,8 @@ export async function runSearch(
     trips = within;
   }
 
+  await checkBookingCountries(trips, req, providers.flights, warnings);
+
   for (const t of trips) t.why = explain(t, trips, req.groups[0]);
 
   const heatmap = buildHeatmap(trips, req, destinations);
@@ -568,6 +574,65 @@ async function mixedAirportTrips(
     }
   }
   return trips;
+}
+
+/**
+ * For the most promising trips, price the same flights on other countries'
+ * booking sites (e.g. the Turkish site in lira). Doesn't change totals, since
+ * it needs the traveller to book that way; it's shown as an option.
+ */
+async function checkBookingCountries(trips: Trip[], req: SearchRequest, provider: FlightProvider, warnings: string[]): Promise<void> {
+  const home = getAirport(req.groups[0].homeAirport)!;
+  // Two separate one-way tickets are compared leg by leg elsewhere; check return tickets only.
+  const eligible = trips.filter((t) => t.legs.length === 1 && !t.legs[0].flight.returnBookingUrl);
+  const picked = new Map<string, Trip>();
+  for (const list of [[...eligible].sort((a, b) => a.smartScore - b.smartScore), [...eligible].sort((a, b) => a.total - b.total)]) {
+    for (const t of list.slice(0, LIMITS.marketChecks)) picked.set(t.legs[0].flight.id, t);
+  }
+  if (picked.size === 0) return;
+  const { rates } = await getRates();
+  const quotes = new Map<string, MarketPrice[]>();
+  let failed = 0;
+  await mapLimit([...picked.values()], 3, async (t) => {
+    const f = t.legs[0].flight;
+    const dest = getDestination(t.destination)!;
+    try {
+      const found = await provider.checkMarkets(f, home, dest, marketsToCheck(home.countryCode, dest.countryCode), req.groups[0].adults, req.groups[0].children);
+      const people = t.legs[0].people;
+      quotes.set(
+        f.id,
+        found
+          .map((q) => {
+            const m = marketByCode(q.market)!;
+            return {
+              market: m.code,
+              countryName: m.countryName,
+              currency: m.currency,
+              localAmount: Math.round(q.pricePerPerson * (rates[m.currency] ?? 1)),
+              pricePerPerson: q.pricePerPerson,
+              saving: Math.round((f.pricePerPerson - q.pricePerPerson) * people),
+              bookingUrl: q.bookingUrl,
+              seenHoursAgo: q.seenHoursAgo,
+            };
+          })
+          .sort((a, b) => a.pricePerPerson - b.pricePerPerson),
+      );
+    } catch (err) {
+      console.error("booking country check failed", err);
+      failed++;
+    }
+  });
+  if (failed > 0) warnings.push("Couldn't compare prices on other countries' booking sites for every trip.");
+  for (const t of trips) {
+    const found = quotes.get(t.legs[0].flight.id);
+    if (!found) continue;
+    t.marketPrices = found;
+    const best = found[0];
+    const flightCost = t.legs[0].flight.pricePerPerson * t.legs[0].people;
+    if (best && best.saving >= Math.max(P.marketMinSaving, flightCost * P.marketMinSavingPct)) {
+      t.flags.push(`Cheaper on the ${best.countryName} site: save {£${best.saving}}`);
+    }
+  }
 }
 
 function emptyResponse(

@@ -144,6 +144,21 @@ export interface AirportOption {
   returnBookingUrl: string | null;
 }
 
+/** The same flights priced on another country's booking site. */
+export interface MarketPrice {
+  market: string; // e.g. "tr"
+  countryName: string; // e.g. "Turkish"
+  currency: string; // e.g. "TRY"
+  /** Per person, in the market's currency. */
+  localAmount: number;
+  /** Per person, converted to GBP. */
+  pricePerPerson: number;
+  /** For everyone travelling, in GBP, vs the price we show. Positive = cheaper. */
+  saving: number;
+  bookingUrl: string;
+  seenHoursAgo: number | null;
+}
+
 export interface Deal {
   kind: "deal" | "error";
   pctBelow: number;
@@ -180,6 +195,8 @@ export interface Trip {
   stayEstimated: boolean;
   stayAlternatives: StayAlternative[];
   airportOptions: AirportOption[];
+  /** Same flights on other countries' booking sites, cheapest first. Empty if not checked. */
+  marketPrices: MarketPrice[];
   deal: Deal | null;
   costs: CostLine[];
   total: number;

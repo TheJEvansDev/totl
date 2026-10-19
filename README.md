@@ -31,6 +31,10 @@ added to the home screen.
   that route in your search, with their own Deals tab
 - **Where to stay, weighed up:** central vs cheapest vs further out, with
   day-ticket costs included and pros and cons for each
+- **Same flights, other booking sites:** the top trips are re-checked on other
+  countries' versions of the booking site (your own, the destination's, plus
+  Türkiye, India and Brazil, which are often cheaper), shown in their currency
+  and yours, with the catches (residents-only fares, needing a no-fee card)
 - **Your currency:** prices shown in 32 currencies using daily European Central
   Bank rates, plus a tip to pay in the local currency with a no-fee card
 - **Honest distances:** stays show km from the centre with a plain label

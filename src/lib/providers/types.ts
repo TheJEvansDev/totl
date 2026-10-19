@@ -1,5 +1,6 @@
 import type { Airport } from "../data/airports";
 import type { Destination } from "../data/destinations";
+import type { Market } from "../markets";
 import type { FlightOption, OneWayFlight, StayOption, StayPrefs } from "../types";
 
 export interface FlightQuery {
@@ -24,6 +25,14 @@ export interface OneWayQuery {
   children: number;
 }
 
+/** The same return flights priced on one country's booking site. */
+export interface MarketQuote {
+  market: string;
+  pricePerPerson: number; // GBP
+  bookingUrl: string;
+  seenHoursAgo: number | null;
+}
+
 export interface FlightProvider {
   id: string;
   label: string;
@@ -32,6 +41,8 @@ export interface FlightProvider {
   search(q: FlightQuery): Promise<FlightOption[]>;
   /** One-way options, used to fly out of one airport and home into another. */
   searchOneWay(q: OneWayQuery): Promise<OneWayFlight[]>;
+  /** Prices for these exact flights on other countries' booking sites. Missing markets are left out. */
+  checkMarkets(flight: FlightOption, origin: Airport, dest: Destination, markets: Market[], adults: number, children: number): Promise<MarketQuote[]>;
 }
 
 export interface StayQuery {

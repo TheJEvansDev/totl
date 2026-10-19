@@ -46,6 +46,10 @@ export const PENALTIES = {
   errorFarePctBelow: 0.55,
   /** Need at least this many prices for a route before calling something a deal. */
   dealMinSamples: 10,
+
+  /** Flag another country's booking site only when it saves at least this much (GBP) and this share of the flight cost. */
+  marketMinSaving: 10,
+  marketMinSavingPct: 0.03,
 };
 
 /** Search limits that keep searches fast and within free API quotas. */
@@ -60,6 +64,8 @@ export const LIMITS = {
   stayLookups: 16,
   /** Accommodation is fetched up to this far out (km) so cheaper options can be compared. Kept modest so we never suggest the middle of nowhere. */
   stayCompareKm: 7,
+  /** How many trips (by best value and by price) get compared across booking countries. */
+  marketChecks: 6,
   /** Destinations checked for "out from one airport, back into another" trips. */
   mixedAirportDestinations: 4,
   maxTravellers: 9,

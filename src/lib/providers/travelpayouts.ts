@@ -11,7 +11,10 @@ import { daysBetween, localDate } from "../dates";
 import { travelpayoutsUrl } from "../links";
 import type { FlightOption, OneWayFlight } from "../types";
 import { TtlCache, mapLimit } from "../util";
-import type { FlightProvider, FlightQuery, OneWayQuery } from "./types";
+import type { Airport } from "../data/airports";
+import type { Market } from "../markets";
+import { MARKETS } from "../markets";
+import type { FlightProvider, FlightQuery, MarketQuote, OneWayQuery } from "./types";
 
 const API = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates";
 const CACHE_TTL_MS = 6 * 3_600_000;
@@ -52,14 +55,29 @@ function monthsBetween(from: string, to: string): string[] {
   return months;
 }
 
-async function fetchMonth(token: string, origin: string, destination: string | null, month: string, oneWay = false): Promise<TpTicket[]> {
-  const key = `${origin}|${destination ?? "*"}|${month}|${oneWay ? "ow" : "rt"}`;
+/** The booking country whose prices to use as the baseline for someone flying from here. */
+export function homeMarket(countryCode: string): string {
+  return MARKETS.find((m) => m.country === countryCode)?.code ?? "us";
+}
+
+async function fetchMonth(
+  token: string,
+  origin: string,
+  destination: string | null,
+  month: string,
+  oneWay = false,
+  market = "gb",
+  returnDate?: string,
+): Promise<TpTicket[]> {
+  const key = `${origin}|${destination ?? "*"}|${month}|${returnDate ?? ""}|${oneWay ? "ow" : "rt"}|${market}`;
   return cache.get(key, async () => {
     const url = new URL(API);
     url.searchParams.set("origin", origin);
     if (destination) url.searchParams.set("destination", destination);
     url.searchParams.set("departure_at", month);
+    if (returnDate) url.searchParams.set("return_at", returnDate);
     url.searchParams.set("one_way", String(oneWay));
+    url.searchParams.set("market", market);
     url.searchParams.set("direct", "false");
     url.searchParams.set("unique", "false");
     url.searchParams.set("sorting", "price");
@@ -129,13 +147,37 @@ export function travelpayoutsFlights(token: string, marker?: string): FlightProv
     id: "travelpayouts",
     label: "Travelpayouts (cached prices from the last ~48 hours)",
     sample: false,
+    async checkMarkets(flight: FlightOption, origin: Airport, dest: Destination, markets: Market[]): Promise<MarketQuote[]> {
+      const home = homeMarket(origin.countryCode);
+      const originCode = origin.cityCode ?? origin.code;
+      const results = await mapLimit(markets.filter((m) => m.code !== home), 3, async (m): Promise<MarketQuote | null> => {
+        try {
+          // Exact dates: departure_at and return_at accept a full date.
+          const tickets = await fetchMonth(token, originCode, dest.code, flight.departDate, false, m.code, flight.returnDate);
+          const match = tickets
+            .filter((t) => (!t.origin_airport || t.origin_airport === origin.code) && t.price)
+            .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))[0];
+          if (!match?.price) return null;
+          return {
+            market: m.code,
+            pricePerPerson: Math.round(match.price),
+            bookingUrl: travelpayoutsUrl(match.link ?? `/search/${origin.code}`, marker),
+            seenHoursAgo: null,
+          };
+        } catch (err) {
+          console.error("market check failed", m.code, err);
+          return null;
+        }
+      });
+      return results.filter((r): r is MarketQuote => r !== null);
+    },
     async searchOneWay(q: OneWayQuery): Promise<OneWayFlight[]> {
       const uk = q.airport.cityCode ?? q.airport.code;
       const months = monthsBetween(q.dateFrom, q.dateTo);
       const jobs = q.destinations.flatMap((d) => months.map((month) => ({ d, month })));
       const batches = await mapLimit(jobs, 4, async ({ d, month }) => {
         const [origin, destination] = q.direction === "out" ? [uk, d.code] : [d.code, uk];
-        const tickets = await fetchMonth(token, origin, destination, month, true);
+        const tickets = await fetchMonth(token, origin, destination, month, true, homeMarket(q.airport.countryCode));
         return tickets.map((t) => toOneWay(t, q, d, marker)).filter((o): o is OneWayFlight => o !== null);
       });
       return batches.flat();
@@ -149,7 +191,8 @@ export function travelpayoutsFlights(token: string, marker?: string): FlightProv
       const targets: (string | null)[] = broad ? [null] : q.destinations.map((d) => d.code);
       const wanted = new Set(q.destinations.map((d) => d.code));
       const jobs = targets.flatMap((dest) => months.map((month) => ({ dest, month })));
-      const batches = await mapLimit(jobs, 4, (j) => fetchMonth(token, origin, j.dest, j.month));
+      const market = homeMarket(q.origin.countryCode);
+      const batches = await mapLimit(jobs, 4, (j) => fetchMonth(token, origin, j.dest, j.month, false, market));
       const out: FlightOption[] = [];
       const seen = new Set<string>();
       for (const t of batches.flat()) {

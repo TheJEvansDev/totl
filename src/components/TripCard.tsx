@@ -8,7 +8,7 @@ import type { Trip } from "@/lib/types";
 
 export function flagTone(flag: string): string {
   if (flag.startsWith("Possible error fare")) return "tag tag-hot";
-  if (flag.startsWith("Deal:") || flag.startsWith("Stay further out")) return "tag tag-deal";
+  if (flag.startsWith("Deal:") || flag.startsWith("Stay further out") || flag.startsWith("Cheaper on the")) return "tag tag-deal";
   if (flag === "Free cancellation" || flag.startsWith("Back into")) return "tag tag-good";
   if (/Early|Lands|Home|Self-transfer|stop|No rooms/.test(flag)) return "tag tag-warn";
   return "tag";

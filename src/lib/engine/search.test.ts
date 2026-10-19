@@ -299,3 +299,19 @@ test("searches from outside the UK, including long-haul", async () => {
   const bkk = resLh.trips.find((t) => t.destination === "BKK")!;
   console.log("LHR-BKK:", `£${bkk.legs[0].flight.pricePerPerson} pp`, Math.round((Date.parse(bkk.legs[0].flight.outArrive) - Date.parse(bkk.legs[0].flight.outDepart)) / 3.6e6), "hrs");
 });
+
+test("compares the same flights on other countries' booking sites", async () => {
+  const parsed = parseRequest(request({ destination: { mode: "cities", cities: ["BCN", "IST"] } }));
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, providers);
+  const checked = res.trips.filter((t) => t.marketPrices.length > 0);
+  assert.ok(checked.length > 0, "top trips are compared");
+  for (const t of checked) {
+    assert.ok(!t.marketPrices.some((m) => m.market === "gb"), "home market isn't compared against itself");
+    for (let i = 1; i < t.marketPrices.length; i++) assert.ok(t.marketPrices[i].pricePerPerson >= t.marketPrices[i - 1].pricePerPerson);
+    const tr = t.marketPrices.find((m) => m.market === "tr");
+    if (tr) assert.ok(tr.localAmount > tr.pricePerPerson * 10, "lira amount is converted");
+  }
+  const flagged = res.trips.find((t) => t.flags.some((f) => f.startsWith("Cheaper on the")));
+  console.log("markets:", checked[0].marketPrices.map((m) => `${m.countryName} ${m.currency} ${m.localAmount} (save £${m.saving})`).join("; "), "| flagged:", flagged?.flags.find((f) => f.startsWith("Cheaper")));
+});

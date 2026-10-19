@@ -11,7 +11,8 @@ import { flightSearchUrl, hotelSearchUrl } from "../links";
 import type { FlightOption, OneWayFlight, StayOption } from "../types";
 import { rand } from "../util";
 import { nightFactor } from "./estimate";
-import type { FlightProvider, FlightQuery, OneWayQuery, StayProvider, StayQuery } from "./types";
+import type { Market } from "../markets";
+import type { FlightProvider, FlightQuery, MarketQuote, OneWayQuery, StayProvider, StayQuery } from "./types";
 import { roomsNeeded } from "./types";
 
 // Day-of-week multipliers, 0 = Sunday.
@@ -84,10 +85,32 @@ function leadFactor(depart: string): number {
   return 1;
 }
 
+/** How each market's price tends to compare, as [lowest, highest] multipliers. */
+const MARKET_SPREAD: Record<string, [number, number]> = {
+  tr: [0.78, 1.04], in: [0.82, 1.05], br: [0.86, 1.06], mx: [0.88, 1.05], th: [0.88, 1.05], za: [0.9, 1.05],
+  pl: [0.92, 1.03], hu: [0.92, 1.03], cz: [0.93, 1.03], us: [0.96, 1.08],
+};
+
 export const sampleFlights: FlightProvider = {
   id: "sample",
   label: "Sample flight data",
   sample: true,
+  async checkMarkets(flight: FlightOption, origin: Airport, dest: Destination, markets: Market[], adults: number, children: number): Promise<MarketQuote[]> {
+    const quotes: MarketQuote[] = [];
+    for (const m of markets) {
+      const key = `mkt|${flight.id}|${m.code}`;
+      if (m.country === origin.countryCode) continue; // that's the price we already show
+      if (rand(`${key}|has`) < 0.25) continue; // not every market has a recent price
+      const [lo, hi] = MARKET_SPREAD[m.code] ?? [0.97, 1.04];
+      quotes.push({
+        market: m.code,
+        pricePerPerson: Math.max(10, Math.round(flight.pricePerPerson * (lo + rand(key) * (hi - lo)))),
+        bookingUrl: flightSearchUrl(flight.origin, dest.code, flight.departDate, flight.returnDate, adults, children),
+        seenHoursAgo: Math.floor(rand(`${key}|seen`) * 40) + 1,
+      });
+    }
+    return quotes;
+  },
   async searchOneWay(q: OneWayQuery): Promise<OneWayFlight[]> {
     const out: OneWayFlight[] = [];
     const dows = q.direction === "out" ? OUT_DOW : RET_DOW;
