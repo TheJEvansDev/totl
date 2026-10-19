@@ -38,7 +38,13 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   residency/card caveats.
 - Stay distance is measured in km (`src/lib/area.ts`); minutes are estimates
   and must be labelled as such.
-- `src/components/`: UI. `App.tsx` holds state; `Sheet.tsx` is the swipeable sheet.
+- `src/components/`: UI. `App.tsx` holds state; `Sheet.tsx` is the swipeable sheet;
+  `SearchForm.tsx` is step-by-step (`Step`), folded after a search via `formKey`.
+- `src/lib/airlineSites.ts`: airline websites and Book buttons. Budget airlines
+  lead with "Book direct", full-service with "Compare booking sites". Only add a
+  pre-filled `search` link when its format is verified.
+- Stay type `none` = staying with friends/family or already booked: no stay costs.
+- Theme: Auto/Light/Dark (`ThemeToggle.tsx`), `data-theme` on `<html>`.
 
 ## Rules
 

@@ -315,3 +315,34 @@ test("compares the same flights on other countries' booking sites", async () => 
   const flagged = res.trips.find((t) => t.flags.some((f) => f.startsWith("Cheaper on the")));
   console.log("markets:", checked[0].marketPrices.map((m) => `${m.countryName} ${m.currency} ${m.localAmount} (save £${m.saving})`).join("; "), "| flagged:", flagged?.flags.find((f) => f.startsWith("Cheaper")));
 });
+
+test("trips without accommodation (staying with friends or already booked)", async () => {
+  const parsed = parseRequest(request({ stay: { type: "none", minRating: 7.5, maxCentreKm: 4 } }));
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, providers);
+  assert.ok(res.trips.length > 0);
+  for (const t of res.trips) {
+    assert.equal(t.stay.source, "none");
+    assert.ok(!t.costs.some((c) => /accommodation|Day tickets/i.test(c.label)), "no stay costs");
+    assert.equal(t.stayAlternatives.length, 0);
+  }
+  assert.ok(!Object.values(res.heatmap!.cells).some((c) => c.estimated), "no typical-price markers");
+});
+
+test("booking buttons send budget airlines direct and compare full-service ones", async () => {
+  const { bookingOptions } = await import("../airlineSites");
+  const q = { from: "MAN", to: "BCN", depart: "2027-03-12", ret: "2027-03-15", adults: 2, children: 1 };
+  const fr = bookingOptions("FR", q, "https://compare.example", "MAN → Barcelona");
+  assert.equal(fr[0].label, "Book direct with Ryanair");
+  assert.ok(fr[0].primary && !fr[0].sponsored);
+  const url = new URL(fr[0].url);
+  assert.equal(url.searchParams.get("originIata"), "MAN");
+  assert.equal(url.searchParams.get("dateIn"), "2027-03-15");
+  assert.equal(url.searchParams.get("children"), "1");
+  const oneWay = new URL(bookingOptions("U2", { ...q, ret: "" }, "x", "r")[0].url);
+  assert.equal(oneWay.searchParams.get("isOneWay"), "on");
+  const ba = bookingOptions("BA", q, "https://compare.example", "r");
+  assert.ok(ba[0].label.startsWith("Compare") && ba[0].primary);
+  assert.ok(ba[1].label === "Book direct with British Airways" && ba[1].note.includes("Search MAN to BCN, Fri 12 Mar to Mon 15 Mar"));
+  assert.equal(bookingOptions("ZZ", q, "x", "r").length, 1);
+});

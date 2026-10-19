@@ -30,7 +30,7 @@ const PlanSchema = z.object({
   adults: z.number(),
   children: z.number(),
   checkedBag: z.boolean(),
-  stayType: z.enum(["any", "hotel", "apartment"]),
+  stayType: z.enum(["any", "hotel", "apartment", "none"]).describe("'none' if they're staying with friends or family, or already have accommodation booked"),
   minRating: z.number().describe("Minimum accommodation rating out of 10. 7.5 unless they say otherwise"),
   maxCentreKm: z.number().describe("Max straight-line km from the centre: 1.5 for 'central', 4 by default, 7 if they don't mind the outskirts"),
 });

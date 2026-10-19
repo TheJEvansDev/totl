@@ -51,6 +51,22 @@ export function estimatedStay(
   children: number,
   prefs: StayPrefs,
 ): StayOption {
+  if (prefs.type === "none") {
+    return {
+      id: "none",
+      source: "none",
+      name: "Your own arrangements",
+      type: "hotel",
+      rating: null,
+      centreKm: null,
+      centreMins: null,
+      lat: null,
+      lon: null,
+      total: 0,
+      freeCancellation: null,
+      bookingUrl: "",
+    };
+  }
   return {
     id: `est-${dest.code}-${checkin}-${checkout}`,
     source: "estimate",

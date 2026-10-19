@@ -43,6 +43,13 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
   const [saved, setSaved] = useState<SavedSearch[]>([]);
   const [toast, setToast] = useState("");
   const [plan, setPlan] = useState<PlanResult | null>(null);
+  // Remounting the form folds every step up (after a search, or a loaded/planned search).
+  const [formKey, setFormKey] = useState(0);
+  const [reviewing, setReviewing] = useState(false);
+  const foldForm = useCallback(() => {
+    setReviewing(true);
+    setFormKey((k) => k + 1);
+  }, []);
   const [currency, setCurrency] = useState("GBP");
   const [rates, setRates] = useState<Record<string, number>>({ GBP: 1 });
   const [ratesNote, setRatesNote] = useState("");
@@ -79,6 +86,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
       if (!response.ok) throw new Error(body.error ?? "Search failed.");
       remember((body as SearchResponse).places);
       setRes(body as SearchResponse);
+      foldForm();
       setLastReq(r);
       setShown(15);
       setTab("trips");
@@ -88,7 +96,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [foldForm]);
 
   useEffect(() => {
     const prefs = loadPrefs();
@@ -212,7 +220,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
           </select>
         </label>
       </div>
-      <SearchForm key={currency} value={req} onChange={setReq} onSubmit={() => run(req)} busy={busy} />
+      <SearchForm key={formKey} reviewing={reviewing} value={req} onChange={setReq} onSubmit={() => run(req)} busy={busy} />
 
       {error && <p className="notice notice-bad" role="alert" style={{ marginTop: 12 }}>{error}</p>}
 

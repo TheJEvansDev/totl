@@ -48,6 +48,7 @@ export function TripCard({ trip, rank, onOpen }: { trip: Trip; rank: number; onO
           {time(f.retDepart, tz)} back · {stops === 0 ? "direct" : `${stops} stop${stops > 1 ? "s" : ""}`}
         </span>
       </div>
+      {trip.stay.source !== "none" && (
       <div className="trip-line">
         <span>
           🛏 {trip.stayEstimated ? "Typical price for a suitable place" : trip.stay.name}
@@ -55,6 +56,7 @@ export function TripCard({ trip, rank, onOpen }: { trip: Trip; rank: number; onO
           {trip.stay.centreKm !== null ? ` · ${areaFor(trip.stay.centreKm).label.toLowerCase()} (${formatKm(trip.stay.centreKm)})` : ""}
         </span>
       </div>
+      )}
       {trip.flags.length > 0 && (
         <div className="tags">
           {trip.flags.filter((fl) => !fl.startsWith("Back into")).map((fl) => (

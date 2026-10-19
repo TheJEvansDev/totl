@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { APP_DESCRIPTION, APP_NAME, APP_TAGLINE } from "@/lib/brand";
 import { ServiceWorker } from "@/components/ServiceWorker";
+import { ThemeToggle, themeScript } from "@/components/ThemeToggle";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -24,7 +25,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-GB">
+    <html lang="en-GB" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>
         <div className="appbar">
           <header className="shell topbar" style={{ padding: "14px 16px 10px" }}>
@@ -35,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </span>
               <span className="brand-tag">{APP_TAGLINE}</span>
             </Link>
+            <ThemeToggle />
           </header>
         </div>
         {children}

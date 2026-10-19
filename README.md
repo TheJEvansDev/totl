@@ -35,6 +35,14 @@ added to the home screen.
   countries' versions of the booking site (your own, the destination's, plus
   Türkiye, India and Brazil, which are often cheaper), shown in their currency
   and yours, with the catches (residents-only fares, needing a no-fee card)
+- **Step by step:** one section at a time, finished ones fold into a summary;
+  returning visitors start with their airport filled in
+- **No accommodation needed** option for staying with friends or family, or
+  when it's already booked
+- **Book direct:** budget airlines open the airline's own site (Ryanair and
+  easyJet with the search filled in); full-service airlines show booking sites
+  first, because they're sometimes cheaper, with the airline as an option
+- **Light, dark or match the device**, with a toggle
 - **Your currency:** prices shown in 32 currencies using daily European Central
   Bank rates, plus a tip to pay in the local currency with a no-fee card
 - **Honest distances:** stays show km from the centre with a plain label

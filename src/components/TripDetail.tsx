@@ -6,6 +6,7 @@ import { displayCurrency } from "@/lib/client/format";
 import { airportName, cityName, place, tzOf } from "@/lib/client/places";
 import { currencyForCountry } from "@/lib/currency";
 import { airlineName } from "@/lib/data/destinations";
+import { bookingOptions } from "@/lib/airlineSites";
 import { airbnbUrl, mapUrl } from "@/lib/links";
 import type { Trip } from "@/lib/types";
 import { Sheet } from "./Sheet";
@@ -130,7 +131,9 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
       )}
 
       <h3>Accommodation</h3>
-      {trip.stayEstimated ? (
+      {trip.stay.source === "none" ? (
+        <p style={{ margin: 0 }}>Not included: you&apos;re staying with friends or family, or it&apos;s already booked.</p>
+      ) : trip.stayEstimated ? (
         <p style={{ margin: 0 }}>
           Typical price for a {trip.stay.type === "apartment" ? "apartment" : "hotel"} matching your filters. Check the live prices below.
         </p>
@@ -195,29 +198,46 @@ export function TripDetail({ trip, sample, adults, children, onClose }: { trip: 
 
       <h3>Book</h3>
       <div className="book">
-        {trip.legs.map((leg) =>
-          leg.flight.returnBookingUrl ? (
+        {trip.legs.map((leg) => {
+          const f = leg.flight;
+          const who = multi ? ` (${leg.groupId})` : "";
+          const tickets = f.returnBookingUrl
+            ? [
+                { title: `Outbound${who}`, airline: f.airline, q: { from: f.origin, to: f.destinationAirport, depart: f.departDate, ret: "", adults, children }, url: f.bookingUrl, route: `${f.origin} → ${dest.name}` },
+                { title: `Return${who}`, airline: f.returnAirline, q: { from: f.destinationAirport, to: f.returnAirport, depart: f.returnDate, ret: "", adults, children }, url: f.returnBookingUrl, route: `${dest.name} → ${f.returnAirport}` },
+              ]
+            : [{ title: `Flights${who}`, airline: f.airline, q: { from: f.origin, to: f.destinationAirport, depart: f.departDate, ret: f.returnDate, adults, children }, url: f.bookingUrl, route: `${f.origin} → ${dest.name}` }];
+          return (
             <div key={leg.groupId} className="book">
-              <a className="btn btn-primary" href={leg.flight.bookingUrl} target="_blank" rel="noopener noreferrer sponsored">
-                Outbound{multi ? ` (${leg.groupId})` : ""}: {leg.flight.origin} → {dest.name}
-              </a>
-              <a className="btn btn-primary" href={leg.flight.returnBookingUrl} target="_blank" rel="noopener noreferrer sponsored">
-                Return{multi ? ` (${leg.groupId})` : ""}: {dest.name} → {leg.flight.returnAirport}
-              </a>
-              <p className="fineprint" style={{ margin: 0 }}>Two separate one-way tickets: book both. If one flight changes, the other airline won&apos;t rebook you.</p>
+              {tickets.map((tk) => (
+                <div key={tk.title} className="book-group">
+                  {tickets.length > 1 || multi ? <div className="book-title">{tk.title}</div> : null}
+                  {bookingOptions(tk.airline, tk.q, tk.url, tk.route).map((o) => (
+                    <div key={o.label} className="book-option">
+                      <a className={`btn ${o.primary ? "btn-primary" : ""}`} href={o.url} target="_blank" rel={`noopener noreferrer${o.sponsored ? " sponsored" : ""}`}>
+                        {o.label}
+                      </a>
+                      <span className="fineprint">{o.note}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {f.returnBookingUrl && (
+                <p className="fineprint" style={{ margin: 0 }}>Two separate one-way tickets: book both. If one flight changes, the other airline won&apos;t rebook you.</p>
+              )}
             </div>
-          ) : (
-            <a key={leg.groupId} className="btn btn-primary" href={leg.flight.bookingUrl} target="_blank" rel="noopener noreferrer sponsored">
-              Check flights{multi ? ` (${leg.groupId})` : ""}: {leg.airport} → {dest.name}
+          );
+        })}
+        {trip.stay.source !== "none" && (
+          <>
+            <a className="btn" href={trip.stay.bookingUrl} target="_blank" rel="noopener noreferrer">
+              {trip.stayEstimated ? "See accommodation prices" : `Check ${trip.stay.name}`}
             </a>
-          ),
+            <a className="btn" href={airbnbUrl(dest, trip.depart, trip.return, adults, children)} target="_blank" rel="noopener noreferrer">
+              Compare on Airbnb
+            </a>
+          </>
         )}
-        <a className="btn" href={trip.stay.bookingUrl} target="_blank" rel="noopener noreferrer">
-          {trip.stayEstimated ? "See accommodation prices" : `Check ${trip.stay.name}`}
-        </a>
-        <a className="btn" href={airbnbUrl(dest, trip.depart, trip.return, adults, children)} target="_blank" rel="noopener noreferrer">
-          Compare on Airbnb
-        </a>
       </div>
       {trip.marketPrices.length > 0 && (
         <>

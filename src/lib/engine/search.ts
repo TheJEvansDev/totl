@@ -122,11 +122,13 @@ function buildTrip(
     if (l.bags > 0) costs.push({ label: `Checked bags${who}`, amount: l.bags, estimated: true });
     costs.push({ label: `${l.leg.groundNote}${who}`, amount: Math.round(l.ground), estimated: true });
   }
-  costs.push({
-    label: stayEstimated ? `Accommodation, ${plural(nights)} (typical price)` : `${stay.name}, ${plural(nights)}`,
-    amount: stay.total,
-    estimated: stayEstimated,
-  });
+  if (stay.source !== "none") {
+    costs.push({
+      label: stayEstimated ? `Accommodation, ${plural(nights)} (typical price)` : `${stay.name}, ${plural(nights)}`,
+      amount: stay.total,
+      estimated: stayEstimated,
+    });
+  }
   const localTransport = stayTransportCost(stay, dest, nights, people);
   if (localTransport > 0) costs.push({ label: `Day tickets into the centre, ${plural(nights)}`, amount: localTransport, estimated: true });
   costs.push({
@@ -325,12 +327,14 @@ export async function runSearch(
   const estimate = (c: Candidate) => estimatedStay(c.dest, c.depart, c.ret, adults, children, req.stay);
   let trips = candidates.map((c) => buildTrip(`${c.key}|${c.variant}`, c.dest, c.depart, c.ret, c.legs, estimate(c), true, []));
 
-  // 3. Real accommodation prices for the most promising date/destination combos.
+  // 3. Real accommodation prices for the most promising date/destination combos
+  //    (skipped when they're staying with friends or have already booked).
+  const ownStay = req.stay.type === "none";
   const shortlist = new Set<string>();
   const bySmart = [...trips].sort((a, b) => a.smartScore - b.smartScore);
   const byTotal = [...trips].sort((a, b) => a.total - b.total);
   const half = Math.ceil(LIMITS.stayLookups / 2);
-  for (const list of [bySmart, byTotal]) {
+  for (const list of ownStay ? [] : [bySmart, byTotal]) {
     let added = 0;
     for (const t of list) {
       const k = `${t.destination}|${t.depart}|${t.return}`;
@@ -383,6 +387,7 @@ export async function runSearch(
   trips = candidates.map((c) => {
     const options = stays.get(c.key);
     const id = `${c.key}|${c.variant}`;
+    if (ownStay) return buildTrip(id, c.dest, c.depart, c.ret, c.legs, estimate(c), false, []);
     if (!options) return buildTrip(id, c.dest, c.depart, c.ret, c.legs, calibrated(c), true, []);
     if (options.length === 0) {
       // Nothing available matching the filters: keep the trip but rank it lower.

@@ -92,17 +92,72 @@ function BudgetInput({ gbp, onChange }: { gbp: number; onChange: (gbp: number) =
 }
 
 type ReturnChoice = "best" | "same" | "specific";
+type StepState = "open" | "done" | "hidden";
+
+const dayFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+const shortDay = (d: string) => dayFmt.format(new Date(`${d}T00:00:00Z`));
+
+/** One step of the search: open (editable), done (one-line summary) or hidden (not reached yet). */
+function Step({
+  index,
+  total,
+  title,
+  state,
+  summary,
+  valid,
+  onOpen,
+  onNext,
+  children,
+}: {
+  index: number;
+  total: number;
+  title: string;
+  state: StepState;
+  summary: string;
+  valid: boolean;
+  onOpen: () => void;
+  onNext: () => void;
+  children: React.ReactNode;
+}) {
+  if (state === "hidden") return null;
+  if (state === "done") {
+    return (
+      <button type="button" id={`step-${index}`} className="card step-summary" onClick={onOpen}>
+        <span>
+          <span className="step-summary-title">{title}</span>
+          <span className="step-summary-text">{summary}</span>
+        </span>
+        <span className="step-change">Change</span>
+      </button>
+    );
+  }
+  return (
+    <section className="card group step-open" id={`step-${index}`} aria-label={title}>
+      <div className="step-head">
+        <h2 className="group-title">{title}</h2>
+        <span className="step-count">{index + 1} of {total}</span>
+      </div>
+      {children}
+      <button type="button" className="btn btn-primary step-next" disabled={!valid} onClick={onNext}>
+        {index === total - 1 ? "Done" : "Continue"}
+      </button>
+    </section>
+  );
+}
 
 export function SearchForm({
   value,
   onChange,
   onSubmit,
   busy,
+  reviewing = false,
 }: {
   value: SearchRequest;
   onChange: (r: SearchRequest) => void;
   onSubmit: () => void;
   busy: boolean;
+  /** Start with every step folded up, e.g. for a shared link or a planned trip. */
+  reviewing?: boolean;
 }) {
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState("");
@@ -168,6 +223,58 @@ export function SearchForm({
   const windowTooLong = d.mode === "window" && daysBetween(d.from, d.to) > 45;
   const departAirports = [g.homeAirport, ...g.extraAirports].filter(Boolean);
 
+  // Step-by-step: one section open at a time; finished ones fold into a summary.
+  const STEPS = 6;
+  const destinationOk = value.destination.mode === "anywhere" ? value.destination.maxPerPerson > 0 : cities.length > 0;
+  const valid = [!!g.homeAirport, returnChoice !== "specific" || !!g.returnTo, destinationOk, !windowTooLong, true, true];
+  const [reached, setReached] = useState(() => (reviewing ? STEPS : g.homeAirport ? 2 : 0));
+  const [active, setActive] = useState<number | null>(() => (reviewing ? null : g.homeAirport ? 2 : 0));
+  const canSearch = !!g.homeAirport && destinationOk && reached >= 3;
+
+  useEffect(() => {
+    if (active === null) return;
+    const el = document.getElementById(`step-${active}`);
+    if (el && active > 0) el.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  }, [active]);
+
+  const summaries = [
+    g.homeAirport
+      ? [airportName(g.homeAirport), ...g.extraAirports.map(airportName)].join(", ") + (g.nearbyHours ? ` + airports within ${g.nearbyHours} hr${g.nearbyHours > 1 ? "s" : ""}` : "")
+      : "Not chosen yet",
+    returnChoice === "best" ? "Best option, any of your airports" : returnChoice === "same" ? "The airport you fly out of" : g.returnTo ? `Into ${airportName(g.returnTo)}` : "Not chosen yet",
+    value.destination.mode === "anywhere"
+      ? `Anywhere up to ${cur} ${fromGbp(value.destination.maxPerPerson).toLocaleString("en-GB")} per person`
+      : cities.length
+        ? cities.map(cityName).join(", ")
+        : "Not chosen yet",
+    d.mode === "window"
+      ? `Leaving ${shortDay(d.from)} to ${shortDay(d.to)}, ${d.minNights === d.maxNights ? d.minNights : `${d.minNights}-${d.maxNights}`} nights${d.weekendsOnly ? ", Thu-Sat only" : ""}`
+      : `${shortDay(d.depart)} to ${shortDay(d.return)}${d.mode === "flexible" ? `, give or take ${d.flexDays} day${d.flexDays > 1 ? "s" : ""}` : ""}`,
+    `${g.adults} adult${g.adults > 1 ? "s" : ""}${g.children ? `, ${g.children} child${g.children > 1 ? "ren" : ""}` : ""} · ${value.bags === "cabin" ? "cabin bags" : "checked bags"}`,
+    value.stay.type === "none"
+      ? "Not needed"
+      : `${value.stay.type === "any" ? "Hotel or flat" : value.stay.type === "hotel" ? "Hotel" : "Apartment"}, ${DISTANCE_CHOICES.find((c) => c.km === value.stay.maxCentreKm)?.label.toLowerCase() ?? `within ${value.stay.maxCentreKm} km`}, ${value.stay.minRating}+`,
+  ];
+
+  function stepProps(i: number) {
+    return {
+      index: i,
+      total: STEPS,
+      state: (active === i ? "open" : i <= reached ? "done" : "hidden") as StepState,
+      summary: summaries[i],
+      valid: valid[i],
+      onOpen: () => setActive(i),
+      onNext: () => {
+        const frontier = Math.max(reached, i + 1);
+        setReached(frontier);
+        // First time through, open the next step. When changing an earlier
+        // step, go back to wherever they'd got to (or close if all done).
+        setActive(frontier >= STEPS ? null : frontier);
+      },
+    };
+  }
+
+
   return (
     <form
       className="form"
@@ -178,8 +285,7 @@ export function SearchForm({
       }}
     >
       {/* Where from */}
-      <section className="card group">
-        <h2 className="group-title">Flying from</h2>
+      <Step {...stepProps(0)} title="Flying from">
         {g.homeAirport ? (
           <div className="pills">
             <Pill code={g.homeAirport} onRemove={() => setGroup({ homeAirport: "", from: null })} />
@@ -225,11 +331,10 @@ export function SearchForm({
           </div>
         )}
         {locError && <p className="hint">{locError}</p>}
-      </section>
+      </Step>
 
       {/* Flying home to */}
-      <section className="card group">
-        <h2 className="group-title">Flying home to</h2>
+      <Step {...stepProps(1)} title="Flying home to">
         <Seg
           label="Flying home to"
           value={returnChoice}
@@ -263,11 +368,10 @@ export function SearchForm({
               }}
             />
           ))}
-      </section>
+      </Step>
 
       {/* Where to */}
-      <section className="card group">
-        <h2 className="group-title">Going to</h2>
+      <Step {...stepProps(2)} title="Going to">
         <Seg
           label="Destination type"
           value={value.destination.mode}
@@ -282,6 +386,7 @@ export function SearchForm({
             <span className="input-prefix">
               <span aria-hidden="true">{cur}</span>
               <BudgetInput
+                key={cur}
                 gbp={value.destination.maxPerPerson}
                 onChange={(gbp) => onChange({ ...value, destination: { mode: "anywhere", maxPerPerson: gbp } })}
               />
@@ -305,11 +410,10 @@ export function SearchForm({
             />
           </>
         )}
-      </section>
+      </Step>
 
       {/* When */}
-      <section className="card group">
-        <h2 className="group-title">When</h2>
+      <Step {...stepProps(3)} title="When">
         <div className="chips">
           <button type="button" className="chip" onClick={() => preset("weekend")}>Weekend away</button>
           <button type="button" className="chip" onClick={() => preset("week")}>A week</button>
@@ -380,27 +484,30 @@ export function SearchForm({
             </>
           )}
         </div>
-      </section>
+      </Step>
 
       {/* Who and stay */}
-      <section className="card group">
-        <h2 className="group-title">Who&apos;s going</h2>
+      <Step {...stepProps(4)} title="Who’s going">
         <Stepper label="Adults" value={g.adults} min={1} max={9} onChange={(n) => setGroup({ adults: n, children: Math.min(g.children, 9 - n) })} />
         <Stepper label="Children" value={g.children} min={0} max={9 - g.adults} onChange={(n) => setGroup({ children: n })} />
         <div className="sub">
           <span className="sub-label">Bags each</span>
           <Seg label="Bags" value={value.bags} options={[["cabin", "Cabin bag only"], ["checked", "Checked bag"]]} onChange={(bags) => onChange({ ...value, bags })} />
         </div>
-      </section>
+      </Step>
 
-      <section className="card group">
-        <h2 className="group-title">Where you stay</h2>
+      <Step {...stepProps(5)} title="Where you stay">
         <Seg
           label="Accommodation type"
           value={value.stay.type}
-          options={[["any", "Hotel or apartment"], ["hotel", "Hotel"], ["apartment", "Apartment"]]}
+          options={[["any", "Hotel or flat"], ["hotel", "Hotel"], ["apartment", "Apartment"], ["none", "Not needed"]]}
           onChange={(type) => onChange({ ...value, stay: { ...value.stay, type } })}
         />
+        {value.stay.type === "none" && (
+          <p className="hint">Staying with friends or family, or already booked? We&apos;ll just find the cheapest way to get there and back.</p>
+        )}
+        {value.stay.type !== "none" && (
+        <>
         <div className="sub">
           <span className="sub-label">How close to the centre</span>
           <Seg
@@ -420,13 +527,17 @@ export function SearchForm({
             {[6, 7, 7.5, 8, 8.5, 9].map((r) => <option key={r} value={r}>{r} / 10{r === 7.5 ? " (good)" : r >= 8.5 ? " (excellent)" : r >= 8 ? " (very good)" : ""}</option>)}
           </select>
         </label>
-      </section>
+        </>
+        )}
+      </Step>
 
+      {canSearch && (
       <div className="submit-bar">
-        <button className="btn btn-primary btn-block" type="submit" disabled={busy || windowTooLong || !g.homeAirport}>
-          {busy ? "Searching…" : !g.homeAirport ? "Choose where you're flying from" : "Find the cheapest trips"}
+        <button className="btn btn-primary btn-block" type="submit" disabled={busy || windowTooLong}>
+          {busy ? "Searching…" : "Find the cheapest trips"}
         </button>
       </div>
+      )}
     </form>
   );
 }

@@ -67,7 +67,7 @@ export function parseRequest(raw: unknown): Parsed<SearchRequest> {
   if (!dates.ok) return dates;
 
   const s = (r.stay ?? {}) as Record<string, unknown>;
-  const stayType = s.type === "hotel" || s.type === "apartment" ? s.type : "any";
+  const stayType = s.type === "hotel" || s.type === "apartment" || s.type === "none" ? s.type : "any";
 
   return {
     ok: true,

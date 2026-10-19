@@ -1,7 +1,8 @@
 // Shared types for the search request, provider results and trips.
 
 export type BagOption = "cabin" | "checked";
-export type StayType = "hotel" | "apartment" | "any";
+/** "none": staying with friends or family, or accommodation already booked. */
+export type StayType = "hotel" | "apartment" | "any" | "none";
 export type SortMode = "smart" | "cheapest" | "deals";
 
 /**
@@ -87,7 +88,7 @@ export interface FlightOption {
 
 export interface StayOption {
   id: string;
-  source: "sample" | "liteapi" | "estimate";
+  source: "sample" | "liteapi" | "estimate" | "none";
   name: string;
   type: "hotel" | "apartment";
   rating: number | null; // 0-10
