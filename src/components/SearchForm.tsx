@@ -77,7 +77,6 @@ function BudgetInput({ gbp, onChange }: { gbp: number; onChange: (gbp: number) =
         className="input"
         type="text"
         inputMode="numeric"
-        pattern="[0-9]*"
         aria-invalid={!valid}
         value={text}
         onChange={(e) => {
@@ -172,6 +171,7 @@ export function SearchForm({
   return (
     <form
       className="form"
+      noValidate
       onSubmit={(e) => {
         e.preventDefault();
         onSubmit();
