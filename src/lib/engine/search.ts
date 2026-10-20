@@ -37,6 +37,7 @@ import { access, arrivalTransfer, assessFlight, assessStay, bagCost, groundCost,
 import type { DatePlan } from "./request";
 import { marketByCode, marketsToCheck } from "../markets";
 import { getRates } from "../rates";
+import { AIRPORTS_PER_LOOKUP, lookupsFor } from "../providers/serpapi";
 import { placesForTrips } from "./places";
 import { destinationList, expandDates } from "./request";
 
@@ -358,6 +359,7 @@ export async function runSearch(
       try {
         flights = flights.concat(await mixedAirportTrips(group, airports, searchDestinations, plan, wantedPairs, providers.flights, flights));
       } catch (err) {
+        if (err instanceof SearchError) throw err;
         console.error("one-way search failed", err);
         warnings.push("Couldn't check one-way fares right now.");
       }
@@ -415,7 +417,8 @@ export async function runSearch(
     }
     // Still nothing: cached prices don't cover every date, so try a week either
     // side and a couple of nights more or less, keeping the same airports.
-    if (allowWiden) {
+    // Not for live prices: every extra date is another paid lookup.
+    if (allowWiden && !providers.flights.live) {
       const wider: SearchRequest = {
         ...req,
         dates: {
@@ -616,25 +619,62 @@ async function mixedAirportTrips(
   const cheapest = new Map<string, number>();
   for (const f of roundTrips) cheapest.set(f.destination, Math.min(cheapest.get(f.destination) ?? Infinity, f.pricePerPerson));
   // With no return fares to go on, fall back to the first (nearest) destinations.
+  const limit = provider.live ? LIMITS.liveDestinations : LIMITS.mixedAirportDestinations;
+  // Live "anywhere" searches: as many places as fit in one lookup per date.
+  const fitOneLookup = (list: Destination[]) => {
+    const out: Destination[] = [];
+    let codes = 0;
+    for (const d of list) {
+      const n = destinationAirports(d.code).length;
+      if (codes + n > AIRPORTS_PER_LOOKUP) continue;
+      out.push(d);
+      codes += n;
+    }
+    return out;
+  };
   const dests =
-    destinations.length <= LIMITS.mixedAirportDestinations
+    destinations.length <= limit
       ? destinations
+      : provider.live
+        ? fitOneLookup(destinations)
       : cheapest.size === 0
-        ? destinations.slice(0, LIMITS.mixedAirportDestinations)
+        ? destinations.slice(0, limit)
         : [...cheapest.entries()]
             .sort((a, b) => a[1] - b[1])
-            .slice(0, LIMITS.mixedAirportDestinations)
+            .slice(0, limit)
             .map(([code]) => getDestination(code)!);
   if (dests.length === 0) return [];
 
-  const fetchAll = (direction: "out" | "back", dateFrom: string, dateTo: string) =>
-    mapLimit(airports, 4, (airport) =>
-      provider.searchOneWay({ direction, airport, destinations: dests, dateFrom, dateTo, adults: group.adults, children: group.children }),
-    ).then((r) => r.flat());
-  const [outs, backs] = await Promise.all([
-    fetchAll("out", plan.departFrom, plan.departTo),
-    fetchAll("back", addDays(plan.departFrom, plan.minNights), addDays(plan.departTo, plan.maxNights)),
-  ]);
+  let outs: OneWayFlight[];
+  let backs: OneWayFlight[];
+  if (provider.searchOneWayDates) {
+    // Live: exact dates only, all airports in each lookup.
+    const pairs = [...wantedPairs].map((p) => p.split("|"));
+    const departs = [...new Set(pairs.map((p) => p[0]))].sort();
+    const returns = [...new Set(pairs.map((p) => p[1]))].sort();
+    const homeBack = group.returnTo ? airports.filter((a) => a.code === group.returnTo) : airports;
+    const lookups =
+      lookupsFor({ airports, destinations: dests, dates: departs }) + lookupsFor({ airports: homeBack, destinations: dests, dates: returns });
+    if (lookups > LIMITS.liveLookups) {
+      throw new SearchError(
+        `Live prices are checked one date at a time, and this search needs ${lookups} checks (the most is ${LIMITS.liveLookups}). Try fewer dates or fewer places.`,
+      );
+    }
+    const base = { destinations: dests, adults: group.adults, children: group.children };
+    [outs, backs] = await Promise.all([
+      provider.searchOneWayDates({ ...base, direction: "out", airports, dates: departs }),
+      provider.searchOneWayDates({ ...base, direction: "back", airports: homeBack, dates: returns }),
+    ]);
+  } else {
+    const fetchAll = (direction: "out" | "back", dateFrom: string, dateTo: string) =>
+      mapLimit(airports, 4, (airport) =>
+        provider.searchOneWay({ direction, airport, destinations: dests, dateFrom, dateTo, adults: group.adults, children: group.children }),
+      ).then((r) => r.flat());
+    [outs, backs] = await Promise.all([
+      fetchAll("out", plan.departFrom, plan.departTo),
+      fetchAll("back", addDays(plan.departFrom, plan.minNights), addDays(plan.departTo, plan.maxNights)),
+    ]);
+  }
 
   // Rough score per one-way flight so only the best few get combined.
   const score = (f: OneWayFlight, direction: "out" | "back") => {

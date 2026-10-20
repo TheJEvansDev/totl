@@ -70,5 +70,8 @@ export const LIMITS = {
   mixedAirportDestinations: 4,
   /** Up to this many destinations also check nearby airports to fly into (Girona for Barcelona). */
   altArrivalDestinations: 3,
+  /** Live searches: most paid lookups one search may spend, and destinations per search. */
+  liveLookups: 30,
+  liveDestinations: 7,
   maxTravellers: 9,
 };

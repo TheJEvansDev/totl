@@ -470,3 +470,54 @@ test("falls back to the nearest dates with prices when the exact dates have none
   assert.ok(res.trips.every((t) => t.depart >= from && t.legs[0].flight.returnAirport === "BRS"));
   assert.match(res.meta.warnings[0], /nearest dates/);
 });
+
+test("live prices: searches exact dates with all airports per lookup, within the lookup limit", async () => {
+  const { lookupsFor } = await import("../providers/serpapi");
+  let spent = 0;
+  const live = {
+    ...sampleFlights,
+    live: true,
+    search: async () => [],
+    searchOneWayDates: async (q: import("../providers/types").LiveOneWayQuery) => {
+      spent += lookupsFor(q);
+      const all = await Promise.all(
+        q.airports.map((airport) => sampleFlights.searchOneWay({ ...q, airport, dateFrom: q.dates[0], dateTo: q.dates[q.dates.length - 1] })),
+      );
+      return all.flat().filter((f) => q.dates.includes(f.date));
+    },
+  };
+  const parsed = parseRequest(request({ groups: [{ homeAirport: "BRS", nearbyHours: 3, adults: 1, returnTo: "BRS" }], dates: { mode: "flexible", depart: start, return: addDays(start, 6), flexDays: 3 } }));
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, { flights: live, stays: sampleStays });
+  assert.ok(res.trips.length > 0);
+  assert.ok(res.trips.every((t) => t.legs[0].flight.returnAirport === "BRS"));
+  assert.ok(spent > 0 && spent <= 30, `spent ${spent} lookups`);
+  // A month-long window would need too many lookups: a clear message, not a silent failure.
+  const big = parseRequest(request({ dates: { mode: "window", from: start, to: addDays(start, 27), minNights: 2, maxNights: 7, weekendsOnly: false } }));
+  assert.ok(big.ok);
+  await assert.rejects(runSearch(big.value, { flights: live, stays: sampleStays }), /Live prices are checked one date at a time/);
+});
+
+test("Google Flights (SerpApi) results map to one-way flights", async () => {
+  const { toOneWay } = await import("../providers/serpapi");
+  const it = {
+    flights: [
+      { departure_airport: { id: "BRS", time: "2026-12-01 06:10" }, arrival_airport: { id: "AMS", time: "2026-12-01 08:30" }, duration: 80, airline: "KLM", flight_number: "KL 1050" },
+      { departure_airport: { id: "AMS", time: "2026-12-01 10:00" }, arrival_airport: { id: "GRO", time: "2026-12-01 12:15" }, duration: 135, airline: "KLM", flight_number: "KL 1665" },
+    ],
+    layovers: [{ duration: 90, id: "AMS" }],
+    price: 123,
+  };
+  const destOf = new Map([["BCN", "BCN"], ["GRO", "GRO"]]);
+  const f = toOneWay(it, new Set(["BRS"]), destOf, "out", "https://www.google.com/travel/flights?x")!;
+  assert.equal(f.from, "BRS");
+  assert.equal(f.to, "GRO");
+  assert.equal(f.airline, "KL");
+  assert.equal(f.stops, 1);
+  assert.equal(f.layoverMins, 90);
+  assert.equal(f.date, "2026-12-01");
+  assert.equal(f.depart, "2026-12-01T06:10:00.000Z");
+  assert.equal(f.arrive, "2026-12-01T11:15:00.000Z");
+  // Flights to somewhere else, or from an airport they didn't pick, are dropped.
+  assert.equal(toOneWay(it, new Set(["CWL"]), destOf, "out", ""), null);
+});

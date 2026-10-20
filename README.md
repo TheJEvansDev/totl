@@ -79,8 +79,7 @@ prices, clearly labelled on screen. Add keys and it switches automatically:
 
 | Variable | What it's for | Where to get it |
 |---|---|---|
-| `TRAVELPAYOUTS_TOKEN` | Flight prices | Travelpayouts → Profile → API token |
-| `TRAVELPAYOUTS_MARKER` | Your affiliate ID for booking links | Travelpayouts → Profile (your partner ID) |
+| `SERPAPI_KEY` | Live flight prices (Google Flights) | serpapi.com → Dashboard → API key. Free plan: 250 lookups a month; one search uses about 10-20 |
 | `LITEAPI_KEY` | Hotel prices | LiteAPI dashboard → API keys (sandbox key is fine to start) |
 | `ANTHROPIC_API_KEY` | "Describe your trip" box (hidden without it) | console.anthropic.com → API keys. Costs roughly 1-3p per description with the default model |
 | `FEEDBACK_WEBHOOK_URL` | Optional: sends feedback to a Discord channel | Discord channel → Edit → Integrations → Webhooks → New webhook → Copy URL |
@@ -112,11 +111,14 @@ automatically.
 - **Estimated costs** in `src/lib/data/airports.ts` (train fares, parking) and
   `src/lib/data/destinations.ts` (transfers, typical hotel prices, bag fees)
   are rough figures and need checking against real prices.
-- **Travelpayouts prices are cached** (found by other users in roughly the last
-  48 hours). Good for spotting cheap dates, but not live. Phase 2 adds a live
-  price check before booking.
-- **LiteAPI and Travelpayouts haven't been tested with real keys yet.** The
-  network here couldn't reach them. The code follows their documented formats
+- **Flight prices are live** from Google Flights via SerpApi. Each date checked
+  costs one lookup, so a search is limited to 30 lookups (narrow windows work
+  best). "Anywhere" searches only cover the places that fit in one lookup per
+  date for now; Google's Explore results would make this much better.
+- Cached Travelpayouts prices are no longer used (`travelpayouts.ts` is kept
+  but not wired in), so the "other countries' booking sites" check is off.
+- **SerpApi hasn't been tested with a real key yet.** The network here can't
+  reach it; `/api/health` shows what comes back. The code follows their documented formats
   and handles errors, but the first real search may need small fixes.
 - **Accommodation booking links** go to a Booking.com search with your dates,
   which earns nothing yet. Options: Booking.com affiliate programme, or LiteAPI's

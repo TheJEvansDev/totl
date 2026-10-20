@@ -1,16 +1,17 @@
 // Picks real providers when API keys are set, otherwise sample data.
+// Flights are live only (Google Flights via SerpApi); cached Travelpayouts
+// prices are no longer used.
 
 import { liteapiStays } from "./liteapi";
 import { sampleFlights, sampleStays } from "./sample";
-import { travelpayoutsFlights } from "./travelpayouts";
+import { serpapiFlights } from "./serpapi";
 import type { FlightProvider, StayProvider } from "./types";
 
 export function getProviders(): { flights: FlightProvider; stays: StayProvider } {
-  const tpToken = process.env.TRAVELPAYOUTS_TOKEN?.trim();
-  const tpMarker = process.env.TRAVELPAYOUTS_MARKER?.trim() || undefined;
+  const serpKey = process.env.SERPAPI_KEY?.trim();
   const liteKey = process.env.LITEAPI_KEY?.trim();
   return {
-    flights: tpToken ? travelpayoutsFlights(tpToken, tpMarker) : sampleFlights,
+    flights: serpKey ? serpapiFlights(serpKey) : sampleFlights,
     stays: liteKey ? liteapiStays(liteKey) : sampleStays,
   };
 }

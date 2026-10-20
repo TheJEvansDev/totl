@@ -25,6 +25,17 @@ export interface OneWayQuery {
   children: number;
 }
 
+/** Live one-way search for exact dates, covering several airports per lookup. */
+export interface LiveOneWayQuery {
+  /** "out": their airports to destinations. "back": destinations to their airports. */
+  direction: "out" | "back";
+  airports: Airport[];
+  destinations: Destination[];
+  dates: string[];
+  adults: number;
+  children: number;
+}
+
 /** The same return flights priced on one country's booking site. */
 export interface MarketQuote {
   market: string;
@@ -37,6 +48,9 @@ export interface FlightProvider {
   id: string;
   label: string;
   sample: boolean;
+  /** Live prices: every lookup costs, so searches use searchOneWayDates for exact dates. */
+  live?: boolean;
+  searchOneWayDates?(q: LiveOneWayQuery): Promise<OneWayFlight[]>;
   /** Return-trip options from one origin to any of the destinations. */
   search(q: FlightQuery): Promise<FlightOption[]>;
   /** One-way options, used to fly out of one airport and home into another. */

@@ -2,14 +2,13 @@ import { NextResponse } from "next/server";
 import { getAirport, getDestination } from "@/lib/data/places";
 import { addDays, todayUK } from "@/lib/dates";
 import { liteapiStays } from "@/lib/providers/liteapi";
-import { travelpayoutsFlights } from "@/lib/providers/travelpayouts";
+import { lookup, serpapiFlights } from "@/lib/providers/serpapi";
 import { createLimiter } from "@/lib/ratelimit";
 import { getRates } from "@/lib/rates";
 
 // Checks the flight, hotel and exchange-rate connections with the real keys
 // and reports what came back. Never returns the keys themselves.
 //   /api/health
-//   /api/health?route=BRS-BCN&month=2026-12 (cached fares on one route)
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -37,58 +36,41 @@ async function rawJson(url: string, init?: RequestInit) {
   return { status: res.status, body };
 }
 
-async function checkFlights(token: string | undefined) {
-  if (!token) return { configured: false, note: "Add TRAVELPAYOUTS_TOKEN in Vercel to use real flight prices." };
-  const month = addDays(todayUK(), 35).slice(0, 7);
-  const out: Record<string, unknown> = { configured: true };
+async function checkFlights(key: string | undefined) {
+  if (!key) return { configured: false, note: "Add SERPAPI_KEY in Vercel to use live Google Flights prices. Until then flights are sample data." };
+  const out: Record<string, unknown> = { configured: true, source: "Google Flights via SerpApi (live). Each check uses 2 of your monthly lookups." };
+  const date = addDays(todayUK(), 40);
   try {
-    const url = new URL("https://api.travelpayouts.com/aviasales/v3/prices_for_dates");
-    Object.entries({ origin: "LON", destination: "BCN", departure_at: month, one_way: "false", currency: "gbp", market: "gb", limit: "5", sorting: "price" }).forEach(([k, v]) =>
-      url.searchParams.set(k, v),
-    );
-    const { status, body } = await rawJson(url.toString(), { headers: { "X-Access-Token": token } });
-    const b = body as { success?: boolean; data?: unknown[]; error?: string };
+    // Two departure airports in one lookup, to confirm several airports work together.
+    const body = await lookup(key, { departure_id: "BRS,BHX", arrival_id: "BCN,GRO", outbound_date: date, type: "2", adults: "1", currency: "GBP", hl: "en", gl: "uk" });
+    const all = [...(body.best_flights ?? []), ...(body.other_flights ?? [])];
     out.raw = {
-      status,
-      success: b?.success ?? null,
-      error: b?.error ?? null,
-      tickets: Array.isArray(b?.data) ? b.data.length : null,
-      first: Array.isArray(b?.data) ? shape(b.data[0], ["origin", "destination", "origin_airport", "destination_airport", "price", "airline", "departure_at", "return_at", "transfers", "duration_to"]) : body,
+      search: `Bristol or Birmingham to Barcelona or Girona, one way, ${date}`,
+      itineraries: all.length,
+      fromAirports: [...new Set(all.map((i) => i.flights?.[0]?.departure_airport?.id))],
+      toAirports: [...new Set(all.map((i) => i.flights?.at(-1)?.arrival_airport?.id))],
+      googleFlightsLink: Boolean(body.search_metadata?.google_flights_url),
+      first: shape(all[0], ["price", "type", "total_duration"]),
+      firstSegment: shape(all[0]?.flights?.[0], ["departure_airport", "arrival_airport", "airline", "flight_number", "duration"]),
     };
   } catch (e) {
     out.raw = { error: short(e) };
   }
   try {
-    const provider = travelpayoutsFlights(token, process.env.TRAVELPAYOUTS_MARKER?.trim() || undefined);
-    const t = todayUK();
-    const flights = await provider.search({
-      origin: getAirport("LGW")!,
+    const provider = serpapiFlights(key);
+    const flights = await provider.searchOneWayDates!({
+      direction: "back",
+      airports: [getAirport("BRS")!],
       destinations: [getDestination("BCN")!],
-      departFrom: addDays(t, 20),
-      departTo: addDays(t, 50),
-      minNights: 2,
-      maxNights: 5,
+      dates: [addDays(date, 4)],
       adults: 1,
       children: 0,
     });
-    const cheapest = [...flights].sort((a, b) => a.pricePerPerson - b.pricePerPerson)[0];
-    const oneWay = { airport: getAirport("LGW")!, destinations: [getDestination("BCN")!], dateFrom: addDays(t, 20), dateTo: addDays(t, 55), adults: 1, children: 0 };
-    const [outs, backs] = await Promise.all([
-      provider.searchOneWay({ ...oneWay, direction: "out" }),
-      provider.searchOneWay({ ...oneWay, direction: "back" }),
-    ]);
-    const cheapestOut = [...outs].sort((a, b) => a.price - b.price)[0];
-    out.oneWays = {
-      out: outs.length,
-      back: backs.length,
-      cheapestOut: cheapestOut ? { price: cheapestOut.price, from: cheapestOut.from, date: cheapestOut.date, airline: cheapestOut.airline, seller: cheapestOut.seller ?? null } : null,
-    };
+    const cheapest = [...flights].sort((a, b) => a.price - b.price)[0];
     out.viaApp = {
-      route: "Gatwick (or another London airport) to Barcelona, 2-5 nights, leaving in 20-50 days",
+      search: `Barcelona to Bristol, one way, ${addDays(date, 4)}`,
       options: flights.length,
-      cheapest: cheapest
-        ? { price: cheapest.pricePerPerson, from: cheapest.origin, airline: cheapest.airline, seller: cheapest.seller ?? null, depart: cheapest.departDate, return: cheapest.returnDate, stops: cheapest.outStops + cheapest.retStops }
-        : null,
+      cheapest: cheapest ? { price: cheapest.price, from: cheapest.from, to: cheapest.to, airline: cheapest.airline, depart: cheapest.depart, stops: cheapest.stops } : null,
     };
   } catch (e) {
     out.viaApp = { error: short(e) };
@@ -130,51 +112,10 @@ async function checkHotels(key: string | undefined) {
   return out;
 }
 
-/**
- * Which dates have cached fares on one route, both ways, for one month.
- *   /api/health?route=BRS-BCN&month=2026-12
- */
-async function checkRoute(token: string | undefined, route: string, month: string) {
-  if (!token) return { configured: false };
-  const [from, to] = route.toUpperCase().split("-");
-  if (!/^[A-Z]{3}$/.test(from ?? "") || !/^[A-Z]{3}$/.test(to ?? "") || !/^\d{4}-\d{2}$/.test(month)) {
-    return { error: "Use ?route=BRS-BCN&month=2026-12" };
-  }
-  const get = async (origin: string, destination: string, oneWay: boolean) => {
-    const url = new URL("https://api.travelpayouts.com/aviasales/v3/prices_for_dates");
-    Object.entries({ origin, destination, departure_at: month, one_way: String(oneWay), currency: "gbp", market: "gb", limit: "1000", sorting: "price", direct: "false", unique: "false" }).forEach(([k, v]) =>
-      url.searchParams.set(k, v),
-    );
-    const { status, body } = await rawJson(url.toString(), { headers: { "X-Access-Token": token } });
-    const data = (body as { data?: Record<string, unknown>[] })?.data;
-    if (!Array.isArray(data)) return { status, error: (body as { error?: string })?.error ?? "no data" };
-    const fares = data
-      .map((t) => ({
-        date: String(t.departure_at ?? "").slice(0, 10),
-        back: t.return_at ? String(t.return_at).slice(0, 10) : undefined,
-        price: t.price,
-        airline: t.airline,
-        from: t.origin_airport,
-        to: t.destination_airport,
-        stops: t.transfers,
-      }))
-      .sort((x, y) => (x.date < y.date ? -1 : 1));
-    return { status, count: fares.length, fares: fares.slice(0, 60) };
-  };
-  const [out, back, returns] = await Promise.all([get(from, to, true), get(to, from, true), get(from, to, false)]);
-  return { route: `${from} to ${to}`, month, oneWayOut: out, oneWayBack: back, returnTrips: returns };
-}
-
 export async function GET(req: Request) {
   if (limited(req)) return NextResponse.json({ error: "Wait a minute before checking again." }, { status: 429 });
-  const params = new URL(req.url).searchParams;
-  const route = params.get("route");
-  if (route) {
-    const result = await checkRoute(process.env.TRAVELPAYOUTS_TOKEN?.trim(), route, params.get("month") ?? addDays(todayUK(), 35).slice(0, 7)).catch((e) => ({ error: short(e) }));
-    return NextResponse.json(result, { headers: { "cache-control": "no-store" } });
-  }
   const [flights, hotels, rates] = await Promise.all([
-    checkFlights(process.env.TRAVELPAYOUTS_TOKEN?.trim()),
+    checkFlights(process.env.SERPAPI_KEY?.trim()),
     checkHotels(process.env.LITEAPI_KEY?.trim()),
     getRates().then((r) => ({ source: r.source, date: r.date, eurPerGbp: r.rates.EUR })).catch((e) => ({ error: short(e) })),
   ]);

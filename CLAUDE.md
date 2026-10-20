@@ -22,7 +22,10 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
 - `src/lib/config/penalties.ts`: all ranking weights and limits.
 - `src/lib/providers/`: `sample.ts` (deterministic fake data), `travelpayouts.ts`
   (flights, cached prices), `liteapi.ts` (hotels), `estimate.ts`. Chosen in
-  `index.ts` by env vars.
+  `index.ts` by env vars. Flights are live only: `serpapi.ts` (Google Flights
+  via SerpApi, `SERPAPI_KEY`), one-way lookups per exact date with all airports
+  comma-separated (`searchOneWayDates`), capped at `LIMITS.liveLookups` per
+  search. Travelpayouts (cached) is no longer wired in; don't bring it back.
 - `src/lib/ai/plan.ts`: "Describe your trip" → structured search via Claude.
 - `src/lib/data/places.ts`: worldwide airports/cities (server only, from
   `world-airports.json`, rebuilt with `scripts/build-airports.py`), metro city
@@ -35,7 +38,7 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   `places` in search responses (`src/lib/client/places.ts`).
 - Money is GBP on the server. Server text writes amounts as `{£123}`; the UI
   converts with `moneyText()`/`money()` into the chosen currency (`/api/rates`, ECB).
-- Booking-country prices (`src/lib/markets.ts`, `checkBookingCountries` in
+- Booking-country prices (off with live flights: the provider returns none) (`src/lib/markets.ts`, `checkBookingCountries` in
   search.ts): top trips are re-priced on other countries' sites (Travelpayouts
   `market` param). Shown as an option, never added to totals; always with the
   residency/card caveats.
@@ -53,10 +56,9 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   city with `leg.viaAirport` set and a coach line (`arrivalTransfer`) instead of
   the usual airport transfer. The transfer line now lives in `legCostLines`.
 - If nothing is found, `runSearch` widens to airports within 2 then 3 hours,
-  then to dates a week either side (±2 nights), and says so (`allowWiden`).
+  then (not for live prices) to dates a week either side, and says so (`allowWiden`).
 - `/api/health` (`src/app/api/health/route.ts`): checks the real flight, hotel
   and rates connections with the deployed keys and shows raw data shapes.
-  `?route=BRS-BCN&month=2026-12` lists cached fares on one route both ways.
   Never return key values from it.
 - `src/components/`: UI. `App.tsx` holds state; `Sheet.tsx` is the swipeable sheet;
   `SearchForm.tsx` is step-by-step (`Step`), folded after a search via `formKey`.
@@ -75,5 +77,5 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
 - Design follows Apple's principles: instant press feedback, sheets leave the
   way they came, respect reduced motion/transparency/contrast, size-specific
   letter-spacing.
-- Travelpayouts and LiteAPI were written against docs but not yet tested with
-  real keys.
+- SerpApi was written against docs but not yet tested with a real key.
+- Live lookups cost money: never add one without counting it in `lookupsFor`.

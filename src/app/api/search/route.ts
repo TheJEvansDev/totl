@@ -4,7 +4,7 @@ import { SearchError, runSearch } from "@/lib/engine/search";
 import { getProviders } from "@/lib/providers";
 import { createLimiter } from "@/lib/ratelimit";
 
-export const maxDuration = 30;
+export const maxDuration = 90;
 
 const limited = createLimiter(12);
 
