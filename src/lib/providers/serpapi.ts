@@ -42,6 +42,7 @@ export interface SerpResponse {
   best_flights?: SerpItinerary[];
   other_flights?: SerpItinerary[];
   search_metadata?: { google_flights_url?: string; status?: string };
+  price_insights?: { lowest_price?: number; typical_price_range?: number[]; price_level?: string };
   error?: string;
 }
 
@@ -133,6 +134,7 @@ async function sameFlightsElsewhere(key: string, flight: FlightOption, markets: 
       currency: m.currency,
       hl: "en",
       gl: googleCountry(m),
+      deep_search: "true",
     });
     const wanted = l.flightNumbers.join("+");
     const same = [...(body.best_flights ?? []), ...(body.other_flights ?? [])].find((it) => flightNumbers(it).join("+") === wanted);
@@ -202,11 +204,16 @@ export function serpapiFlights(key: string): FlightProvider {
           currency: "GBP",
           hl: "en",
           gl: "uk",
+          // Slower, but the same results as Google Flights in a browser.
+          deep_search: "true",
         });
         const url = body.search_metadata?.google_flights_url ?? "https://www.google.com/travel/flights";
+        const range = body.price_insights?.typical_price_range;
+        const typical: [number, number] | undefined = range?.length === 2 && range[0] > 0 ? [range[0], range[1]] : undefined;
         return [...(body.best_flights ?? []), ...(body.other_flights ?? [])]
           .map((it) => toOneWay(it, homeCodes, destOf, q.direction, url))
-          .filter((f): f is OneWayFlight => f !== null && f.date === date);
+          .filter((f): f is OneWayFlight => f !== null && f.date === date)
+          .map((f) => (typical ? { ...f, typical } : f));
       });
       return results.flat();
     },

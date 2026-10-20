@@ -75,7 +75,7 @@ export function parseRequest(raw: unknown): Parsed<SearchRequest> {
       groups,
       destination,
       dates: dates.value,
-      bags: r.bags === "checked" ? "checked" : "cabin",
+      bags: r.bags === "checked" || r.bags === "small" ? r.bags : "cabin",
       stay: {
         type: stayType,
         minRating: num(s.minRating, 0, 9.5, 7.5),

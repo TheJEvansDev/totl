@@ -222,7 +222,7 @@ test("suggests compromises that save money against the top trip", async () => {
   const res = await runSearch(parsed.value, providers);
   assert.ok(res.compromises.length > 0);
   for (const c of res.compromises) assert.ok(c.saving >= 15);
-  assert.ok(res.compromises.some((c) => c.label.includes("cabin bags")));
+  assert.ok(res.compromises.some((c) => c.label.includes("small bag")));
   const ids = new Set(res.trips.map((t) => t.id));
   for (const c of res.compromises) if (c.tripId) assert.ok(ids.has(c.tripId));
   console.log("compromises:", res.compromises.map((c) => `${c.label} (£${c.saving})`).join("; "));
@@ -559,4 +559,14 @@ test("live other-country prices only count the exact same flights", async () => 
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+test("cabin bags cost extra on budget airlines; a small bag is free", async () => {
+  const { bagCost } = await import("./costs");
+  const ryanair = { airline: "FR", returnAirline: "U2" } as import("../types").FlightOption;
+  const ba = { airline: "BA", returnAirline: "BA" } as import("../types").FlightOption;
+  assert.equal(bagCost(ryanair, "small", 2), 0);
+  assert.ok(bagCost(ryanair, "cabin", 2) > 0);
+  assert.equal(bagCost(ba, "cabin", 2), 0);
+  assert.ok(bagCost(ryanair, "checked", 1) > bagCost(ryanair, "cabin", 1));
 });

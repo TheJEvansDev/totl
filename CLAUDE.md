@@ -67,6 +67,9 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   lead with "Book direct", full-service with "Compare booking sites". Only add a
   pre-filled `search` link when its format is verified.
 - Stay type `none` = staying with friends/family or already booked: no stay costs.
+- Bags: `small` (under seat, free), `cabin` (overhead; budget airlines charge,
+  `cabinBagFee`), `checked`. Live deals use Google's `typical_price_range`, never
+  the spread of fares within one search.
 - Theme: Auto/Light/Dark (`ThemeToggle.tsx`), `data-theme` on `<html>`.
 
 ## Rules

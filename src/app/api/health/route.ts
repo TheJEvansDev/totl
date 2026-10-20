@@ -42,7 +42,7 @@ async function checkFlights(key: string | undefined) {
   const date = addDays(todayUK(), 40);
   try {
     // Two departure airports in one lookup, to confirm several airports work together.
-    const body = await lookup(key, { departure_id: "BRS,BHX", arrival_id: "BCN,GRO", outbound_date: date, type: "2", adults: "1", currency: "GBP", hl: "en", gl: "uk" });
+    const body = await lookup(key, { departure_id: "BRS,BHX", arrival_id: "BCN,GRO", outbound_date: date, type: "2", adults: "1", currency: "GBP", hl: "en", gl: "uk", deep_search: "true" });
     const all = [...(body.best_flights ?? []), ...(body.other_flights ?? [])];
     out.raw = {
       search: `Bristol or Birmingham to Barcelona or Girona, one way, ${date}`,
@@ -50,6 +50,8 @@ async function checkFlights(key: string | undefined) {
       fromAirports: [...new Set(all.map((i) => i.flights?.[0]?.departure_airport?.id))],
       toAirports: [...new Set(all.map((i) => i.flights?.at(-1)?.arrival_airport?.id))],
       googleFlightsLink: Boolean(body.search_metadata?.google_flights_url),
+      cheapest: Math.min(...all.map((i) => i.price ?? Infinity)),
+      typicalRange: body.price_insights?.typical_price_range ?? null,
       first: shape(all[0], ["price", "type", "total_duration"]),
       firstSegment: shape(all[0]?.flights?.[0], ["departure_airport", "arrival_airport", "airline", "flight_number", "duration"]),
     };

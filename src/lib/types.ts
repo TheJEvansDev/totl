@@ -1,6 +1,7 @@
 // Shared types for the search request, provider results and trips.
 
-export type BagOption = "cabin" | "checked";
+/** "small": under-seat bag only. "cabin": a wheelie bag in the overhead lockers. */
+export type BagOption = "small" | "cabin" | "checked";
 /** "none": staying with friends or family, or accommodation already booked. */
 export type StayType = "hotel" | "apartment" | "any" | "none";
 export type SortMode = "smart" | "cheapest" | "deals";
@@ -88,6 +89,8 @@ export interface FlightOption {
   seenHoursAgo: number | null;
   /** Live prices: the out and back tickets, to re-check them on other countries' sites. */
   liveLegs?: LiveLeg[];
+  /** Usual price range for both tickets together, per person (from Google). */
+  typical?: [number, number];
 }
 
 export interface StayOption {
@@ -125,6 +128,8 @@ export interface OneWayFlight {
   seller?: string | null;
   /** Live prices: what's needed to look up this exact flight again. */
   liveLeg?: LiveLeg;
+  /** Google's usual price range for this route and date, per person. */
+  typical?: [number, number];
 }
 
 /** One live one-way ticket: the real airports, date and flight numbers. */

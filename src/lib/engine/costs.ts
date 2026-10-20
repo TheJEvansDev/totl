@@ -6,7 +6,7 @@ import { haversineKm, travelHours } from "../data/airports";
 import { formatKm } from "../area";
 import { dayTicketFor, getAirport } from "../data/places";
 import type { Destination } from "../data/destinations";
-import { airlineName, checkedBagFee } from "../data/destinations";
+import { airlineName, cabinBagFee, checkedBagFee } from "../data/destinations";
 import { localHour } from "../dates";
 import type { BagOption, FlightOption, Penalty, StayOption, TravellerGroup } from "../types";
 
@@ -68,7 +68,8 @@ export function groundCost(group: TravellerGroup, outAirport: Airport, backAirpo
 }
 
 export function bagCost(flight: FlightOption, bags: BagOption, people: number): number {
-  if (bags === "cabin") return 0;
+  if (bags === "small") return 0;
+  if (bags === "cabin") return (cabinBagFee(flight.airline) + cabinBagFee(flight.returnAirline)) * people;
   return (checkedBagFee(flight.airline) + checkedBagFee(flight.returnAirline)) * people;
 }
 

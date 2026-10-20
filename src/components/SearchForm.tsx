@@ -266,7 +266,7 @@ export function SearchForm({
     d.mode === "window"
       ? `Leaving ${shortDay(d.from)} to ${shortDay(d.to)}, ${d.minNights === d.maxNights ? d.minNights : `${d.minNights}-${d.maxNights}`} nights${d.weekendsOnly ? ", Thu-Sat only" : ""}`
       : `${shortDay(d.depart)} to ${shortDay(d.return)}${d.mode === "flexible" ? `, give or take ${d.flexDays} day${d.flexDays > 1 ? "s" : ""}` : ""}`,
-    `${g.adults} adult${g.adults > 1 ? "s" : ""}${g.children ? `, ${g.children} child${g.children > 1 ? "ren" : ""}` : ""} · ${value.bags === "cabin" ? "cabin bags" : "checked bags"}`,
+    `${g.adults} adult${g.adults > 1 ? "s" : ""}${g.children ? `, ${g.children} child${g.children > 1 ? "ren" : ""}` : ""} · ${value.bags === "small" ? "small bag only" : value.bags === "cabin" ? "cabin bag" : "checked bag"}`,
     value.stay.type === "none"
       ? "Not needed"
       : `${value.stay.type === "any" ? "Hotel or flat" : value.stay.type === "hotel" ? "Hotel" : "Apartment"}, ${DISTANCE_CHOICES.find((c) => c.km === value.stay.maxCentreKm)?.label.toLowerCase() ?? `within ${value.stay.maxCentreKm} km`}, ${value.stay.minRating}+`,
@@ -522,8 +522,12 @@ export function SearchForm({
         <Stepper label="Children" value={g.children} min={0} max={9 - g.adults} onChange={(n) => setGroup({ children: n })} />
         <div className="sub">
           <span className="sub-label">Bags each</span>
-          <Seg label="Bags" value={value.bags} options={[["cabin", "Cabin bag only"], ["checked", "Checked bag"]]} onChange={(bags) => onChange({ ...value, bags })} />
+          <Seg label="Bags" value={value.bags} options={[["small", "Small bag only"], ["cabin", "Cabin bag"], ["checked", "Checked bag"]]} onChange={(bags) => onChange({ ...value, bags })} />
         </div>
+        <p className="fineprint" style={{ margin: 0 }}>
+          Small bag: fits under the seat, free on every airline. Cabin bag: a wheelie bag for the overhead lockers, which budget airlines
+          charge for, so we add their fee.
+        </p>
       </Step>
 
       <Step {...stepProps(5)} title="Where you stay">

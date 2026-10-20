@@ -118,6 +118,16 @@ export function airlineName(code: string): string {
   return AIRLINES[code]?.name ?? code;
 }
 
+/**
+ * Estimated fee for a wheelie cabin bag (overhead lockers), per bag per
+ * direction (GBP). Budget airlines only include a small under-seat bag; most
+ * others include a cabin bag, so unknown airlines count as free.
+ */
+const CABIN_BAG: Record<string, number> = { FR: 18, U2: 15, W6: 20, VY: 15, PC: 15, NK: 40, F9: 40, "6E": 0 };
+export function cabinBagFee(code: string): number {
+  return CABIN_BAG[code] ?? 0;
+}
+
 export function checkedBagFee(code: string): number {
   return AIRLINES[code]?.checkedBag ?? 35;
 }

@@ -62,6 +62,7 @@ interface LegChoice {
   leg: GroupLeg;
   cost: number; // flights + bags + ground
   bags: number;
+  bagLabel: string;
   ground: number;
   penalties: Penalty[];
   flags: string[];
@@ -117,6 +118,7 @@ function evaluateLeg(
     },
     cost: flight.pricePerPerson * people + bag + ground.cost + transfer.amount,
     bags: bag,
+    bagLabel: bags === "checked" ? "Checked bags" : "Cabin bags for the overhead lockers",
     ground: ground.cost,
     penalties,
     flags,
@@ -142,7 +144,7 @@ function legCostLines(l: LegChoice, dest: Destination, multi: boolean): CostLine
   const lines: CostLine[] = [
     { label: `${route}, ${l.leg.people} × {£${f.pricePerPerson}}${who}`, amount: f.pricePerPerson * l.leg.people, estimated: false, kind: "flight" },
   ];
-  if (l.bags > 0) lines.push({ label: `Checked bags${who}`, amount: l.bags, estimated: true, kind: "flight" });
+  if (l.bags > 0) lines.push({ label: `${l.bagLabel}${who}`, amount: l.bags, estimated: true, kind: "flight" });
   lines.push({ label: `${l.leg.groundNote}${who}`, amount: Math.round(l.ground), estimated: true, kind: "flight" });
   lines.push({ label: `${l.transfer.label}${who}`, amount: l.transfer.amount, estimated: true, kind: "flight" });
   return lines;
@@ -400,7 +402,8 @@ export async function runSearch(
     const cheapLegs = perGroup.map((m) => m.get(key)!.cheap);
     const combos = perGroup[0].get(key)!.combos;
     candidates.push({ key, dest, depart, ret, variant: "smart", legs: smartLegs, combos });
-    if (cheapLegs.some((l, i) => l.leg.flight.id !== smartLegs[i].leg.flight.id)) {
+    // Only a separate trip when it's actually cheaper, not just different flights at the same price.
+    if (cheapLegs.reduce((s, l) => s + l.cost, 0) < smartLegs.reduce((s, l) => s + l.cost, 0)) {
       candidates.push({ key, dest, depart, ret, variant: "cheap", legs: cheapLegs, combos });
     }
   }
@@ -542,13 +545,19 @@ export async function runSearch(
       }));
   }
 
-  // Flag flights well below the typical price for the route in this search.
+  // Flag flights well below the usual price. Live: Google's typical price
+  // range for the route, and only below its low end. Otherwise: the median of
+  // this search's fares for the route.
   const typical = new Map<string, number>();
-  for (const [code, prices] of routePrices) if (prices.length >= P.dealMinSamples) typical.set(code, median(prices));
+  if (!providers.flights.live) {
+    for (const [code, prices] of routePrices) if (prices.length >= P.dealMinSamples) typical.set(code, median(prices));
+  }
   for (const t of trips) {
-    const usual = typical.get(routeOf(t.legs[0].flight));
+    const f = t.legs[0].flight;
+    if (providers.flights.live && (!f.typical || f.pricePerPerson >= f.typical[0])) continue;
+    const usual = providers.flights.live ? (f.typical![0] + f.typical![1]) / 2 : typical.get(routeOf(f));
     if (!usual) continue;
-    const pct = 1 - t.legs[0].flight.pricePerPerson / usual;
+    const pct = 1 - f.pricePerPerson / usual;
     const deal: Deal | null =
       pct >= P.errorFarePctBelow ? { kind: "error", pctBelow: Math.round(pct * 100) } : pct >= P.dealPctBelow ? { kind: "deal", pctBelow: Math.round(pct * 100) } : null;
     if (!deal) continue;
@@ -735,6 +744,7 @@ async function mixedAirportTrips(
             seller: o.seller && o.seller === b.seller ? o.seller : null,
             seenHoursAgo: o.seenHoursAgo !== null && b.seenHoursAgo !== null ? Math.max(o.seenHoursAgo, b.seenHoursAgo) : null,
             ...(o.liveLeg && b.liveLeg ? { liveLegs: [o.liveLeg, b.liveLeg] } : {}),
+            ...(o.typical && b.typical ? { typical: [o.typical[0] + b.typical[0], o.typical[1] + b.typical[1]] as [number, number] } : {}),
           });
         }
       }
@@ -908,9 +918,9 @@ export function findCompromises(trips: Trip[], req: SearchRequest): Compromise[]
       tripId: null,
     });
 
-  if (req.bags === "checked") {
-    const bags = top.costs.find((c) => c.label.startsWith("Checked bags"));
-    if (bags) out.push({ label: "Travel with cabin bags only", detail: "No checked bags on either flight", saving: bags.amount, tripId: null });
+  if (req.bags !== "small") {
+    const bags = top.costs.find((c) => c.label.startsWith("Checked bags") || c.label.startsWith("Cabin bags"));
+    if (bags) out.push({ label: "Take a small bag only", detail: "One bag that fits under the seat, free on every airline", saving: bags.amount, tripId: null });
   }
 
   const elsewhere = cheapest(trips.filter((t) => t.destination !== top.destination && t.nights === top.nights));
