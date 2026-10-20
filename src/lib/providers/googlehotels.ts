@@ -34,6 +34,12 @@ interface GhResponse {
 
 const cache = new TtlCache<GhResponse>(CACHE_TTL_MS);
 
+/**
+ * Hostels: Google lists them as hotels, but the price is often a bed in a
+ * shared dorm, which isn't what "hotel or flat" means.
+ */
+export const HOSTEL = /hostel|backpacker|\bgenerator\b|youth hostel|dorm/i;
+
 /** Google's rating filter: 7 = 3.5+, 8 = 4.0+, 9 = 4.5+ (out of 5). */
 function ratingFilter(minRating10: number): string | null {
   if (minRating10 >= 9) return "9";
@@ -112,7 +118,7 @@ export function googleHotels(key: string): StayProvider {
       const fallback = body.search_metadata?.google_hotels_url ?? "https://www.google.com/travel/hotels";
       return props
         .map((p) => toStay(p, nights, centre, fallback))
-        .filter((s): s is StayOption => s !== null)
+        .filter((s): s is StayOption => s !== null && !HOSTEL.test(s.name))
         .filter((s) => (s.rating ?? 0) >= prefs.minRating && (s.centreKm ?? 0) <= prefs.maxCentreKm)
         .filter((s) => prefs.type === "any" || s.type === prefs.type);
     },

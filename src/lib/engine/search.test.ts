@@ -590,3 +590,9 @@ test("Google Hotels results map to stays with km from the centre and a 10-point 
   assert.equal(r.type, "apartment");
   assert.equal(toStay({ name: "No price", gps_coordinates: { latitude: 41.4, longitude: 2.19 } }, 3, bcn, ""), null);
 });
+
+test("hostels aren't offered as hotels", async () => {
+  const { HOSTEL } = await import("../providers/googlehotels");
+  for (const n of ["Generator Barcelona", "Urbany Hostel BCN GO!", "Sant Jordi Hostels Sagrada Familia"]) assert.ok(HOSTEL.test(n), n);
+  for (const n of ["Hotel Rec Barcelona", "Hostal Grau", "Seventy Barcelona"]) assert.ok(!HOSTEL.test(n), n);
+});
