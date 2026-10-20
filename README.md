@@ -35,6 +35,8 @@ added to the home screen.
   countries' versions of the booking site (your own, the destination's, plus
   Türkiye, India and Brazil, which are often cheaper), shown in their currency
   and yours, with the catches (residents-only fares, needing a no-fee card)
+- **Fly from a whole city or area:** "London (all airports)" picks all six;
+  "Manchester area" adds the airports within about 90 km. Works worldwide
 - **Starts by asking what you want:** "I know where I'm going", "Surprise
   me" (with "I'm feeling lucky", which opens the single best trip) or
   "Describe my trip"

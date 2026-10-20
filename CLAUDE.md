@@ -28,6 +28,9 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   `world-airports.json`, rebuilt with `scripts/build-airports.py`), metro city
   codes, country cost tiers, place search. Hand-entered UK airports
   (`airports.ts`) and destinations (`destinations.ts`) override it.
+- Departure pickers accept cities ("LON" = all London airports) and areas
+  ("MAN+" = an airport plus same-country airports within 90 km), expanded by
+  `areaAirports()` via `/api/places?expand=`.
 - The browser never loads the airport list: names come via `/api/places` and
   `places` in search responses (`src/lib/client/places.ts`).
 - Money is GBP on the server. Server text writes amounts as `{£123}`; the UI

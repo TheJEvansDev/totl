@@ -91,6 +91,19 @@ function BudgetInput({ gbp, onChange }: { gbp: number; onChange: (gbp: number) =
   );
 }
 
+/** The airports behind a pick: itself, every airport of a city, or an area. */
+async function airportsFor(p: PlaceInfo): Promise<string[]> {
+  if (p.type === "airport") return [p.code];
+  try {
+    const res = await fetch(`/api/places?expand=${encodeURIComponent(p.code)}`);
+    const { results } = (await res.json()) as { results: PlaceInfo[] };
+    remember(results);
+    return results.map((r) => r.code);
+  } catch {
+    return [];
+  }
+}
+
 type ReturnChoice = "best" | "same" | "specific";
 type StepState = "open" | "done" | "hidden";
 
@@ -294,7 +307,16 @@ export function SearchForm({
             <Pill code={g.homeAirport} onRemove={() => setGroup({ homeAirport: "", from: null })} />
           </div>
         ) : (
-          <PlacePicker label="Your airport" placeholder="City or airport, e.g. Bristol or BRS" onPick={(p) => setGroup({ homeAirport: p.code })} />
+          <PlacePicker
+            label="Your airport or city"
+            placeholder="e.g. London, Bristol or BRS"
+            cities
+            areas
+            onPick={async (p) => {
+              const [first, ...rest] = await airportsFor(p);
+              if (first) setGroup({ homeAirport: first, extraAirports: [...new Set([...rest, ...g.extraAirports])].filter((c) => c !== first) });
+            }}
+          />
         )}
 
         <div className="sub">
@@ -316,12 +338,15 @@ export function SearchForm({
         )}
         {addingAirport ? (
           <PlacePicker
-            label="Add another airport to fly from"
-            placeholder="e.g. London Stansted"
+            label="Add another airport or city to fly from"
+            placeholder="e.g. London Stansted, or London for all of them"
             exclude={departAirports}
+            cities
+            areas
             autoFocus
-            onPick={(p) => {
-              setGroup({ extraAirports: [...new Set([...g.extraAirports, p.code])] });
+            onPick={async (p) => {
+              const codes = await airportsFor(p);
+              setGroup({ extraAirports: [...new Set([...g.extraAirports, ...codes])].filter((c) => c !== g.homeAirport) });
               setAddingAirport(false);
             }}
           />

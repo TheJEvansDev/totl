@@ -11,6 +11,7 @@ export function PlacePicker({
   label,
   placeholder,
   cities = false,
+  areas = false,
   exclude = [],
   onPick,
   autoFocus = false,
@@ -18,6 +19,8 @@ export function PlacePicker({
   label: string;
   placeholder: string;
   cities?: boolean;
+  /** Also offer "X area" (an airport and its neighbours). */
+  areas?: boolean;
   exclude?: string[];
   onPick: (p: PlaceInfo) => void;
   autoFocus?: boolean;
@@ -40,7 +43,7 @@ export function PlacePicker({
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/places?q=${encodeURIComponent(q)}${cities ? "&cities=1" : ""}`, { signal: ctrl.signal });
+        const res = await fetch(`/api/places?q=${encodeURIComponent(q)}${cities ? "&cities=1" : ""}${areas ? "&areas=1" : ""}`, { signal: ctrl.signal });
         const body = (await res.json()) as { results: PlaceInfo[] };
         setResults(body.results.filter((r) => !exclude.includes(r.code)));
         setActive(0);
@@ -56,7 +59,7 @@ export function PlacePicker({
       ctrl.abort();
     };
     // exclude is compared by its contents so a new array each render doesn't refetch.
-  }, [query, cities, exclude.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [query, cities, areas, exclude.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function pick(p: PlaceInfo) {
     remember([p]);
@@ -122,9 +125,9 @@ export function PlacePicker({
             >
               <span className="picker-code">{r.code}</span>
               <span>
-                <b>{r.type === "city" ? r.name : r.name === r.city || r.name.startsWith(r.city) ? r.name : `${r.city} ${r.name}`}</b>
+                <b>{r.type !== "airport" ? r.name : r.name === r.city || r.name.startsWith(r.city) ? r.name : `${r.city} ${r.name}`}</b>
                 <br />
-                <span className="meta">{r.type === "city" ? `Every airport · ${r.country}` : r.country}</span>
+                <span className="meta">{r.type === "city" ? `Every airport · ${r.country}` : r.type === "area" ? `This airport and others nearby · ${r.country}` : r.country}</span>
               </span>
             </li>
           ))}

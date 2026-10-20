@@ -417,3 +417,18 @@ test("swapping in alternative flights or stays recalculates the trip", async () 
   assert.equal(both.legs[0].flight.id, other.leg.flight.id, "flights kept");
   assert.ok(Math.abs(both.total - swapped.total - alt.netVsChosen) <= 2, `${both.total - swapped.total} vs ${alt.netVsChosen}`);
 });
+
+test("departure search offers whole cities and areas", async () => {
+  const { searchPlaces, areaAirports } = await import("../data/places");
+  const london = searchPlaces("london", { cities: true, areas: true });
+  assert.equal(london[0].code, "LON");
+  assert.deepEqual(areaAirports("LON"), ["LHR", "LGW", "STN", "LTN", "LCY", "SEN"]);
+  const manchester = searchPlaces("manchester", { cities: true, areas: true });
+  const area = manchester.find((r) => r.type === "area");
+  assert.ok(area && area.code === "MAN+", "Manchester area offered");
+  const codes = areaAirports("MAN+");
+  assert.equal(codes[0], "MAN");
+  assert.ok(codes.includes("LPL"), `Manchester area: ${codes.join(",")}`);
+  assert.ok(!codes.includes("DUB"), "stays in the same country");
+  console.log("areas:", "MAN+ →", codes.join(","), "| BRS+ →", areaAirports("BRS+").join(","), "| NYC →", areaAirports("NYC").join(","));
+});

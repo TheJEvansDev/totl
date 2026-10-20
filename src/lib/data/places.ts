@@ -240,8 +240,8 @@ export function nearestAirport(point: { lat: number; lon: number }): Airport {
 
 export interface PlaceInfo {
   code: string;
-  /** "airport" or "city" (a city with several airports) */
-  type: "airport" | "city";
+  /** "airport", "city" (a city with several airports) or "area" (an airport and its neighbours) */
+  type: "airport" | "city" | "area";
   name: string;
   city: string;
   country: string;
@@ -269,8 +269,30 @@ function norm(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
+const AREA_KM = 90;
+
+/**
+ * Airports to fly from for a city or area: every airport of a multi-airport
+ * city (LON → LHR, LGW...), or an airport plus scheduled airports within
+ * about 90 km in the same country ("BRS+" → Bristol, Cardiff, Exeter...).
+ */
+export function areaAirports(code: string): string[] {
+  const c = code.toUpperCase();
+  const metro = METROS[c.replace(/\+$/, "")];
+  if (metro) return metro.airports.filter((a) => getAirport(a));
+  const centre = WORLD_BY_CODE.get(c.replace(/\+$/, ""));
+  if (!centre) return getAirport(c) ? [c] : [];
+  const near = WORLD.filter((w) => w.countryCode === centre.countryCode && w.code !== centre.code)
+    .map((w) => ({ w, km: haversineKm(centre, w) }))
+    .filter((x) => x.km <= AREA_KM)
+    .sort((a, b) => b.w.size - a.w.size || a.km - b.km)
+    .slice(0, 5)
+    .map((x) => x.w.code);
+  return [centre.code, ...near];
+}
+
 /** Search airports and cities by code, city, airport name or country. */
-export function searchPlaces(query: string, opts: { cities: boolean; limit?: number }): PlaceInfo[] {
+export function searchPlaces(query: string, opts: { cities: boolean; areas?: boolean; limit?: number }): PlaceInfo[] {
   const q = norm(query.trim());
   if (q.length < 2) return [];
   const scored: { code: string; score: number }[] = [];
@@ -294,11 +316,27 @@ export function searchPlaces(query: string, opts: { cities: boolean; limit?: num
     else if (country.startsWith(q) && q.length >= 4) s = 20;
     if (s >= 0) scored.push({ code: w.code, score: s + w.size * 3 + (w.countryCode === "GB" ? 2 : 0) });
   }
-  return scored
+  const results = scored
     .sort((a, b) => b.score - a.score || a.code.localeCompare(b.code))
     .slice(0, opts.limit ?? 8)
     .map((s) => placeInfo(s.code)!)
     .filter(Boolean);
+  if (!opts.areas) return results;
+  // Offer "X area" next to an airport that has neighbours (and isn't already
+  // part of a multi-airport city in the list).
+  const out: PlaceInfo[] = [];
+  const offered = new Set(results.filter((r) => r.type === "city").flatMap((r) => areaAirports(r.code)));
+  for (const r of results) {
+    if (r.type === "airport" && !offered.has(r.code) && out.length < 3 + results.length) {
+      const area = areaAirports(r.code);
+      if (area.length > 1 && !METRO_OF.has(r.code)) {
+        out.push({ ...r, code: `${r.code}+`, type: "area", name: `${r.city} area (${area.length} airports)` });
+        area.forEach((a) => offered.add(a));
+      }
+    }
+    out.push(r);
+  }
+  return out.slice(0, (opts.limit ?? 8) + 3);
 }
 
 /** Straight-line flight distance between two places, in km. */
