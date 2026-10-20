@@ -301,13 +301,13 @@ export async function runSearch(
         }
       });
       let flights = results.flat();
-      if (group.mixAirports && airports.length > 1) {
-        try {
-          flights = flights.concat(await mixedAirportTrips(group, airports, destinations, plan, wantedPairs, providers.flights, flights));
-        } catch (err) {
-          console.error("mixed airport search failed", err);
-          warnings.push("Couldn't check flying home to a different airport right now.");
-        }
+      // Pairs of one-way tickets: often cheaper and better covered than returns,
+      // and how out-of-one-airport, home-into-another trips are built.
+      try {
+        flights = flights.concat(await mixedAirportTrips(group, airports, destinations, plan, wantedPairs, providers.flights, flights));
+      } catch (err) {
+        console.error("one-way search failed", err);
+        warnings.push("Couldn't check one-way fares right now.");
       }
       // Best leg per destination and date pair, by smart score and by price.
       const best = new Map<string, { smart: LegChoice; cheap: LegChoice; combos: Map<string, LegChoice> }>();
@@ -542,13 +542,16 @@ async function mixedAirportTrips(
   const people = group.adults + group.children;
   const cheapest = new Map<string, number>();
   for (const f of roundTrips) cheapest.set(f.destination, Math.min(cheapest.get(f.destination) ?? Infinity, f.pricePerPerson));
+  // With no return fares to go on, fall back to the first (nearest) destinations.
   const dests =
     destinations.length <= LIMITS.mixedAirportDestinations
       ? destinations
-      : [...cheapest.entries()]
-          .sort((a, b) => a[1] - b[1])
-          .slice(0, LIMITS.mixedAirportDestinations)
-          .map(([code]) => getDestination(code)!);
+      : cheapest.size === 0
+        ? destinations.slice(0, LIMITS.mixedAirportDestinations)
+        : [...cheapest.entries()]
+            .sort((a, b) => a[1] - b[1])
+            .slice(0, LIMITS.mixedAirportDestinations)
+            .map(([code]) => getDestination(code)!);
   if (dests.length === 0) return [];
 
   const fetchAll = (direction: "out" | "back", dateFrom: string, dateTo: string) =>
@@ -592,6 +595,8 @@ async function mixedAirportTrips(
     for (const dest of dests) {
       for (const { f: o } of outMap.get(`${dest.code}|${depart}`) ?? []) {
         for (const { f: b } of backMap.get(`${dest.code}|${ret}`) ?? []) {
+          // Unless they're happy to fly home elsewhere, both tickets use the same airport.
+          if (!group.mixAirports && o.from !== b.to) continue;
           trips.push({
             id: `mix-${o.id}-${b.id}`,
             source: o.source,
@@ -614,6 +619,7 @@ async function mixedAirportTrips(
             pricePerPerson: o.price + b.price,
             bookingUrl: o.bookingUrl,
             returnBookingUrl: b.bookingUrl,
+            seller: o.seller && o.seller === b.seller ? o.seller : null,
             seenHoursAgo: o.seenHoursAgo !== null && b.seenHoursAgo !== null ? Math.max(o.seenHoursAgo, b.seenHoursAgo) : null,
           });
         }

@@ -71,11 +71,22 @@ async function checkFlights(token: string | undefined) {
       children: 0,
     });
     const cheapest = [...flights].sort((a, b) => a.pricePerPerson - b.pricePerPerson)[0];
+    const oneWay = { airport: getAirport("LGW")!, destinations: [getDestination("BCN")!], dateFrom: addDays(t, 20), dateTo: addDays(t, 55), adults: 1, children: 0 };
+    const [outs, backs] = await Promise.all([
+      provider.searchOneWay({ ...oneWay, direction: "out" }),
+      provider.searchOneWay({ ...oneWay, direction: "back" }),
+    ]);
+    const cheapestOut = [...outs].sort((a, b) => a.price - b.price)[0];
+    out.oneWays = {
+      out: outs.length,
+      back: backs.length,
+      cheapestOut: cheapestOut ? { price: cheapestOut.price, from: cheapestOut.from, date: cheapestOut.date, airline: cheapestOut.airline, seller: cheapestOut.seller ?? null } : null,
+    };
     out.viaApp = {
-      route: "Gatwick to Barcelona, 2-5 nights, leaving in 20-50 days",
+      route: "Gatwick (or another London airport) to Barcelona, 2-5 nights, leaving in 20-50 days",
       options: flights.length,
       cheapest: cheapest
-        ? { price: cheapest.pricePerPerson, airline: cheapest.airline, depart: cheapest.departDate, return: cheapest.returnDate, stops: cheapest.outStops + cheapest.retStops }
+        ? { price: cheapest.pricePerPerson, from: cheapest.origin, airline: cheapest.airline, seller: cheapest.seller ?? null, depart: cheapest.departDate, return: cheapest.returnDate, stops: cheapest.outStops + cheapest.retStops }
         : null,
     };
   } catch (e) {

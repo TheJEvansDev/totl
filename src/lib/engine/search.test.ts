@@ -119,7 +119,9 @@ test("Travelpayouts tickets are mapped and filtered", () => {
   assert.equal(opt.departDate, "2027-03-12");
   assert.equal(opt.returnDate, "2027-03-15");
   assert.ok(opt.bookingUrl.includes("marker=12345"));
-  assert.equal(tp.toOption({ ...ticket, origin_airport: "LTN" }, q, getDestination("BCN")!), null);
+  // Another London airport is kept (and costed as its own airport); one elsewhere isn't.
+  assert.equal(tp.toOption({ ...ticket, origin_airport: "LTN" }, q, getDestination("BCN")!)?.origin, "LTN");
+  assert.equal(tp.toOption({ ...ticket, origin_airport: "MAN" }, q, getDestination("BCN")!), null);
 });
 
 test("LiteAPI rates parse to the lowest price per hotel", () => {

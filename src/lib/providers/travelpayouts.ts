@@ -6,7 +6,7 @@
 // Docs: https://support.travelpayouts.com/hc/en-us/articles/203956163
 
 import type { Destination } from "../data/destinations";
-import { getDestination, routeMins } from "../data/places";
+import { getAirport, getDestination, routeMins } from "../data/places";
 import { daysBetween, localDate } from "../dates";
 import { travelpayoutsUrl } from "../links";
 import type { FlightOption, OneWayFlight } from "../types";
@@ -34,6 +34,8 @@ interface TpTicket {
   duration_to?: number;
   duration_back?: number;
   link?: string;
+  /** The airline or booking site the fare was found on. */
+  gate?: string;
 }
 
 const cache = new TtlCache<TpTicket[]>(CACHE_TTL_MS);
@@ -95,10 +97,22 @@ async function fetchMonth(
   });
 }
 
+/**
+ * The airport a fare actually uses, if it's the searched airport or another
+ * one in the same city (e.g. Southend when searching from Gatwick: both are
+ * London). Getting to it is costed like any other airport.
+ */
+function sameCityAirport(code: string | undefined, airport: Airport): string | null {
+  if (!code || code === airport.code) return airport.code;
+  const other = getAirport(code);
+  return other && airport.cityCode && other.cityCode === airport.cityCode ? other.code : null;
+}
+
 function toOption(t: TpTicket, q: FlightQuery, dest: Destination, marker?: string): FlightOption | null {
   if (!t.price || !t.departure_at || !t.return_at || !t.airline) return null;
   // London searches use the city code, so keep only the chosen airport.
-  if (t.origin_airport && t.origin_airport !== q.origin.code) return null;
+  const origin = sameCityAirport(t.origin_airport, q.origin);
+  if (!origin) return null;
   const directMins = routeMins(q.origin, dest);
   const durTo = t.duration_to ?? directMins;
   const durBack = t.duration_back ?? directMins;
@@ -114,10 +128,10 @@ function toOption(t: TpTicket, q: FlightQuery, dest: Destination, marker?: strin
   const nights = daysBetween(departDate, returnDate);
   if (departDate < q.departFrom || departDate > q.departTo || nights < q.minNights || nights > q.maxNights) return null;
   return {
-    id: `tp-${q.origin.code}-${dest.code}-${t.airline}-${outDepart}-${retDepart}`,
+    id: `tp-${origin}-${dest.code}-${t.airline}-${outDepart}-${retDepart}`,
     source: "travelpayouts",
-    origin: q.origin.code,
-    returnAirport: q.origin.code,
+    origin,
+    returnAirport: origin,
     destination: dest.code,
     destinationAirport: t.destination_airport ?? dest.code,
     airline: t.airline,
@@ -139,6 +153,7 @@ function toOption(t: TpTicket, q: FlightQuery, dest: Destination, marker?: strin
       : travelpayoutsUrl(`/search/${q.origin.code}`, marker),
     returnBookingUrl: null,
     seenHoursAgo: null,
+    seller: t.gate ?? null,
   };
 }
 
@@ -212,8 +227,8 @@ export function travelpayoutsFlights(token: string, marker?: string): FlightProv
 
 function toOneWay(t: TpTicket, q: OneWayQuery, dest: Destination, marker?: string): OneWayFlight | null {
   if (!t.price || !t.departure_at || !t.airline) return null;
-  const ukAirport = q.direction === "out" ? t.origin_airport : t.destination_airport;
-  if (ukAirport && ukAirport !== q.airport.code) return null;
+  const home = sameCityAirport(q.direction === "out" ? t.origin_airport : t.destination_airport, q.airport);
+  if (!home) return null;
   const tz = q.direction === "out" ? q.airport.tz : dest.tz;
   const depart = new Date(t.departure_at).toISOString();
   const date = localDate(depart, tz);
@@ -221,7 +236,7 @@ function toOneWay(t: TpTicket, q: OneWayQuery, dest: Destination, marker?: strin
   const directMins = routeMins(q.airport, dest);
   const dur = t.duration_to ?? t.duration ?? directMins;
   const stops = t.transfers ?? 0;
-  const [from, to] = q.direction === "out" ? [q.airport.code, dest.code] : [dest.code, q.airport.code];
+  const [from, to] = q.direction === "out" ? [home, dest.code] : [dest.code, home];
   return {
     id: `tp-ow-${from}-${to}-${t.airline}-${depart}`,
     source: "travelpayouts",
@@ -236,6 +251,7 @@ function toOneWay(t: TpTicket, q: OneWayQuery, dest: Destination, marker?: strin
     price: Math.round(t.price),
     bookingUrl: travelpayoutsUrl(t.link ?? `/search/${from}`, marker),
     seenHoursAgo: null,
+    seller: t.gate ?? null,
   };
 }
 

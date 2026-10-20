@@ -80,6 +80,8 @@ export interface FlightOption {
   selfTransfer: boolean;
   pricePerPerson: number; // GBP, return, before bags
   bookingUrl: string;
+  /** Who the fare was found on (airline or booking site), if known. */
+  seller?: string | null;
   /** Separate link for the return flight when it's two one-way tickets. */
   returnBookingUrl: string | null;
   /** How old the cached price is, if known. */
@@ -118,6 +120,7 @@ export interface OneWayFlight {
   price: number; // per person
   bookingUrl: string;
   seenHoursAgo: number | null;
+  seller?: string | null;
 }
 
 export interface StayAlternative {

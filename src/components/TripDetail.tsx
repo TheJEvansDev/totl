@@ -136,6 +136,7 @@ export function TripDetail({ trip: original, sample, adults, children, onClose }
             </div>
             <p className="fineprint">
               Local times. {f.seenHoursAgo !== null ? `Price seen ${f.seenHoursAgo} hours ago.` : "Cached price seen in the last 48 hours."}
+              {f.seller ? ` Found on ${f.seller}.` : ""}
               {f.selfTransfer && " Self-transfer: separate tickets, so if the first flight is late the airline won't rebook you."}
             </p>
           </div>
