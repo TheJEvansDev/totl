@@ -21,6 +21,7 @@ export function TripCard({ trip, rank, onOpen }: { trip: Trip; rank: number; onO
   const stops = f.outStops + f.retStops;
   const outName = airportName(f.origin);
   const backName = airportName(f.returnAirport);
+  const via = leg.viaAirport ? `, via ${airportName(leg.viaAirport)}` : "";
   return (
     <button type="button" className="card trip" onClick={onOpen}>
       <div className="trip-top">
@@ -43,7 +44,7 @@ export function TripCard({ trip, rank, onOpen }: { trip: Trip; rank: number; onO
       <div className="trip-why">{moneyText(trip.why)}</div>
       <div className="trip-line">
         <span>
-          ✈ {outName === backName ? outName : `Out of ${outName}, home into ${backName}`} · {airlineName(f.airline)}
+          ✈ {outName === backName ? outName : `Out of ${outName}, home into ${backName}`}{via} · {airlineName(f.airline)}
           {f.returnAirline !== f.airline ? ` / ${airlineName(f.returnAirline)}` : ""} · {time(f.outDepart, destTz(f.origin))} out,{" "}
           {time(f.retDepart, tz)} back · {stops === 0 ? "direct" : `${stops} stop${stops > 1 ? "s" : ""}`}
         </span>

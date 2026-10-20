@@ -7,7 +7,7 @@
 import { formatKm } from "../area";
 import { LIMITS, PENALTIES as P } from "../config/penalties";
 import type { Airport } from "../data/airports";
-import { getAirport, getDestination, nearbyAirports } from "../data/places";
+import { destinationAirports, getAirport, getDestination, nearbyAirports, nearbyArrivalAirports } from "../data/places";
 import type { Destination } from "../data/destinations";
 import { airlineName } from "../data/destinations";
 import { addDays, dayName, dayOfWeek, daysBetween, localHour } from "../dates";
@@ -33,7 +33,7 @@ import type {
   Trip,
 } from "../types";
 import { mapLimit } from "../util";
-import { access, assessFlight, assessStay, bagCost, groundCost, stayTransportCost } from "./costs";
+import { access, arrivalTransfer, assessFlight, assessStay, bagCost, groundCost, stayTransportCost } from "./costs";
 import type { DatePlan } from "./request";
 import { marketByCode, marketsToCheck } from "../markets";
 import { getRates } from "../rates";
@@ -64,9 +64,23 @@ interface LegChoice {
   ground: number;
   penalties: Penalty[];
   flags: string[];
+  /** Getting between the arrival airport and the city, both ways. */
+  transfer: { label: string; amount: number };
 }
 
-function evaluateLeg(group: TravellerGroup, flight: FlightOption, dest: Destination, bags: SearchRequest["bags"]): LegChoice {
+/** An airport outside the destination people can fly into instead, e.g. Girona for Barcelona. */
+interface AltArrival {
+  parent: Destination;
+  km: number;
+}
+
+function evaluateLeg(
+  group: TravellerGroup,
+  flight: FlightOption,
+  dest: Destination,
+  bags: SearchRequest["bags"],
+  alt?: AltArrival,
+): LegChoice {
   const people = group.adults + group.children;
   const airport = getAirport(flight.origin)!;
   const nights = daysBetween(flight.departDate, flight.returnDate);
@@ -74,6 +88,22 @@ function evaluateLeg(group: TravellerGroup, flight: FlightOption, dest: Destinat
   const bag = bagCost(flight, bags, people);
   const { penalties, flags } = assessFlight(flight, dest, people, ground);
   if (flight.returnAirport !== flight.origin) flags.push(`Back into ${getAirport(flight.returnAirport)!.name}`);
+  let transfer = { label: `Airport transfers in ${dest.name}`, amount: Math.round(dest.transferOneWayPP * 2 * people) };
+  if (alt) {
+    const arrival = getAirport(flight.destinationAirport)!;
+    const coach = arrivalTransfer(alt.km);
+    transfer = {
+      label: `Coach between ${arrival.name} airport and ${dest.name}, about ${coach.hours} hrs each way`,
+      amount: coach.oneWayPP * 2 * people,
+    };
+    // Compared with a normal airport transfer of about half an hour.
+    const extra = Math.max(0, coach.hours - 0.5);
+    penalties.push({
+      label: `About ${coach.hours} hrs each way between ${arrival.name} and ${dest.name}`,
+      amount: Math.round(extra * P.extraTravelHourPP * people * (1 + P.returnTravelMultiplier)),
+    });
+    flags.push(`Into ${arrival.name}, ${alt.km} km from ${dest.name}`);
+  }
   return {
     leg: {
       groupId: group.id,
@@ -82,12 +112,14 @@ function evaluateLeg(group: TravellerGroup, flight: FlightOption, dest: Destinat
       flight,
       groundNote: ground.note,
       extraTravelHours: Math.round((ground.extraOutHours + ground.extraBackHours) * 10) / 10,
+      ...(alt ? { viaAirport: flight.destinationAirport } : {}),
     },
-    cost: flight.pricePerPerson * people + bag + ground.cost,
+    cost: flight.pricePerPerson * people + bag + ground.cost + transfer.amount,
     bags: bag,
     ground: ground.cost,
     penalties,
     flags,
+    transfer,
   };
 }
 
@@ -99,17 +131,19 @@ const plural = (n: number) => `${n} night${n > 1 ? "s" : ""}`;
 function legCostLines(l: LegChoice, dest: Destination, multi: boolean): CostLine[] {
   const f = l.leg.flight;
   const who = multi ? ` (${l.leg.groupId})` : "";
+  const to = destinationAirports(dest.code).includes(f.destinationAirport) ? dest.code : f.destinationAirport;
   const route =
     f.returnAirport !== f.origin
-      ? `Flights ${f.origin}–${dest.code}–${f.returnAirport}, two one-way tickets`
+      ? `Flights ${f.origin}–${to}–${f.returnAirport}, two one-way tickets`
       : f.returnBookingUrl
-        ? `Flights ${f.origin}–${dest.code}, two one-way tickets`
-        : `Flights ${f.origin}–${dest.code}, ${airlineName(f.airline)}`;
+        ? `Flights ${f.origin}–${to}, two one-way tickets`
+        : `Flights ${f.origin}–${to}, ${airlineName(f.airline)}`;
   const lines: CostLine[] = [
     { label: `${route}, ${l.leg.people} × {£${f.pricePerPerson}}${who}`, amount: f.pricePerPerson * l.leg.people, estimated: false, kind: "flight" },
   ];
   if (l.bags > 0) lines.push({ label: `Checked bags${who}`, amount: l.bags, estimated: true, kind: "flight" });
   lines.push({ label: `${l.leg.groundNote}${who}`, amount: Math.round(l.ground), estimated: true, kind: "flight" });
+  lines.push({ label: `${l.transfer.label}${who}`, amount: l.transfer.amount, estimated: true, kind: "flight" });
   return lines;
 }
 
@@ -149,11 +183,6 @@ function buildTrip(
     ...legs.flatMap((l) => legCostLines(l, dest, multi)),
     ...stayCostLines(stay, stayEstimated, dest, nights, people),
   ];
-  costs.push({
-    label: `Airport transfers in ${dest.name}`,
-    amount: Math.round(dest.transferOneWayPP * 2 * people),
-    estimated: true,
-  });
   const total = Math.round(costs.reduce((s, c) => s + c.amount, 0));
   const penalties = [...asKind(legs.flatMap((l) => l.penalties), "flight"), ...asKind(stayEstimated ? [] : assessStay(stay, nights, people), "stay")];
   const flags = [...new Set([...legs.flatMap((l) => l.flags), ...extraFlags])];
@@ -277,6 +306,29 @@ export async function runSearch(
   const adults = req.groups.reduce((s, g) => s + g.adults, 0);
   const children = req.groups.reduce((s, g) => s + g.children, 0);
 
+  // Nearby airports to fly into as well (Girona and Reus for Barcelona), with
+  // the coach into the city costed in. Only for a few chosen destinations.
+  const altArrivals = new Map<string, AltArrival>();
+  if (req.destination.mode === "cities" && destinations.length <= LIMITS.altArrivalDestinations) {
+    const taken = new Set(destinations.flatMap((d) => [d.code, ...destinationAirports(d.code)]));
+    for (const d of destinations) {
+      for (const { airport, km } of nearbyArrivalAirports(d)) {
+        if (taken.has(airport.code) || getDestination(airport.code)?.code !== airport.code) continue;
+        taken.add(airport.code);
+        altArrivals.set(airport.code, { parent: d, km });
+      }
+    }
+  }
+  const searchDestinations = [...destinations, ...[...altArrivals.keys()].map((c) => getDestination(c)!)];
+  // Flights into a nearby airport count as flights to the city they serve.
+  const asParent = (f: FlightOption): FlightOption => {
+    const alt = altArrivals.get(f.destination);
+    return alt ? { ...f, destination: alt.parent.code, destinationAirport: f.destination } : f;
+  };
+  const altOf = (f: FlightOption) => (f.destinationAirport !== f.destination ? altArrivals.get(f.destinationAirport) : undefined);
+  // Typical fares are per arrival airport, so Girona isn't judged against Barcelona.
+  const routeOf = (f: FlightOption) => (altOf(f) ? f.destinationAirport : f.destination);
+
   // 1. Flights for every group from every candidate airport.
   const routePrices = new Map<string, number[]>();
   const perGroup = await Promise.all(
@@ -286,7 +338,7 @@ export async function runSearch(
         try {
           return await providers.flights.search({
             origin,
-            destinations,
+            destinations: searchDestinations,
             departFrom: plan.departFrom,
             departTo: plan.departTo,
             minNights: plan.minNights,
@@ -304,25 +356,26 @@ export async function runSearch(
       // Pairs of one-way tickets: often cheaper and better covered than returns,
       // and how out-of-one-airport, home-into-another trips are built.
       try {
-        flights = flights.concat(await mixedAirportTrips(group, airports, destinations, plan, wantedPairs, providers.flights, flights));
+        flights = flights.concat(await mixedAirportTrips(group, airports, searchDestinations, plan, wantedPairs, providers.flights, flights));
       } catch (err) {
         console.error("one-way search failed", err);
         warnings.push("Couldn't check one-way fares right now.");
       }
+      flights = flights.map(asParent);
       // Best leg per destination and date pair, by smart score and by price.
       const best = new Map<string, { smart: LegChoice; cheap: LegChoice; combos: Map<string, LegChoice> }>();
       for (const f of flights) {
         if (!wantedPairs.has(`${f.departDate}|${f.returnDate}`)) continue;
         if (group.returnTo && f.returnAirport !== group.returnTo) continue;
         // Typical fares per destination, used to spot deals.
-        if (gi === 0) routePrices.set(f.destination, [...(routePrices.get(f.destination) ?? []), f.pricePerPerson]);
+        if (gi === 0) routePrices.set(routeOf(f), [...(routePrices.get(routeOf(f)) ?? []), f.pricePerPerson]);
         const dest = getDestination(f.destination);
         if (!dest) continue;
-        const choice = evaluateLeg(group, f, dest, req.bags);
+        const choice = evaluateLeg(group, f, dest, req.bags, altOf(f));
         const key = `${f.destination}|${f.departDate}|${f.returnDate}`;
         const cur = best.get(key);
         const smartOf = (c: LegChoice) => c.cost + sum(c.penalties);
-        const combo = `${f.origin}>${f.returnAirport}`;
+        const combo = `${f.origin}>${altOf(f) ? f.destinationAirport : ""}>${f.returnAirport}`;
         if (!cur) best.set(key, { smart: choice, cheap: choice, combos: new Map([[combo, choice]]) });
         else {
           if (smartOf(choice) < smartOf(cur.smart)) cur.smart = choice;
@@ -457,7 +510,7 @@ export async function runSearch(
         totalDelta: Math.round(l.cost - chosen.cost),
         groundNote: l.leg.groundNote,
         extraHours: l.leg.extraTravelHours,
-        flags: l.flags.filter((f) => !f.startsWith("Back into")),
+        flags: l.flags.filter((f) => !f.startsWith("Back into") && !f.startsWith("Into ")),
         bookingUrl: l.leg.flight.bookingUrl,
         returnBookingUrl: l.leg.flight.returnBookingUrl,
         leg: l.leg,
@@ -470,7 +523,7 @@ export async function runSearch(
   const typical = new Map<string, number>();
   for (const [code, prices] of routePrices) if (prices.length >= P.dealMinSamples) typical.set(code, median(prices));
   for (const t of trips) {
-    const usual = typical.get(t.destination);
+    const usual = typical.get(routeOf(t.legs[0].flight));
     if (!usual) continue;
     const pct = 1 - t.legs[0].flight.pricePerPerson / usual;
     const deal: Deal | null =
@@ -648,7 +701,8 @@ async function checkBookingCountries(trips: Trip[], req: SearchRequest, provider
   let failed = 0;
   await mapLimit([...picked.values()], 3, async (t) => {
     const f = t.legs[0].flight;
-    const dest = getDestination(t.destination)!;
+    // Priced to the airport actually flown into (Girona rather than Barcelona).
+    const dest = getDestination(f.destinationAirport) ?? getDestination(t.destination)!;
     try {
       const found = await provider.checkMarkets(f, home, dest, marketsToCheck(home.countryCode, dest.countryCode), req.groups[0].adults, req.groups[0].children);
       const people = t.legs[0].people;

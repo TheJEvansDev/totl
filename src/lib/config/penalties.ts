@@ -68,5 +68,7 @@ export const LIMITS = {
   marketChecks: 6,
   /** Destinations checked for "out from one airport, back into another" trips. */
   mixedAirportDestinations: 4,
+  /** Up to this many destinations also check nearby airports to fly into (Girona for Barcelona). */
+  altArrivalDestinations: 3,
   maxTravellers: 9,
 };

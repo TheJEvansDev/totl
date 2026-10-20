@@ -189,6 +189,20 @@ export function destinationAirports(code: string): string[] {
   return METROS[code]?.airports ?? [code];
 }
 
+/**
+ * Other airports people fly into for a destination, e.g. Girona and Reus for
+ * Barcelona: same country, 20-120 km from the centre, biggest first.
+ */
+export function nearbyArrivalAirports(dest: Destination, limit = 2): { airport: Airport; km: number }[] {
+  const own = new Set(destinationAirports(dest.code));
+  return WORLD.filter((w) => w.countryCode === dest.countryCode && !own.has(w.code) && METRO_OF.get(w.code) !== dest.code)
+    .map((w) => ({ w, km: haversineKm(dest, w) }))
+    .filter((x) => x.km >= 20 && x.km <= 120)
+    .sort((a, b) => b.w.size - a.w.size || a.km - b.km)
+    .slice(0, limit)
+    .map((x) => ({ airport: getAirport(x.w.code)!, km: Math.round(x.km) }));
+}
+
 // Popular destinations used for "anywhere" searches. Hand-entered ones first.
 const POPULAR_CITY =
   "NYC BOS WAS CHI LAS LAX SFO YTO YVR MEX DXB DOH AUH CAI RAK BKK SIN KUL HKG TYO SEL SYD MEL AKL CPT JNB DEL BOM LON MAN EDI DUB OSL STO HEL TLL RIX VNO WAW GDN ZAG LJU BEG SOF OTP FLR BLQ PMO LYS GVA ZRH SVQ BIO TLV AMM".split(" ");

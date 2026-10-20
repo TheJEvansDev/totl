@@ -48,6 +48,10 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
 - Customising a trip (`src/lib/customise.ts`): tapping an airport option or a
   stay alternative swaps it in without a new search. Relies on cost lines and
   penalties being tagged `kind: "flight" | "stay"`; keep tagging new ones.
+- Nearby arrival airports (`nearbyArrivalAirports`, e.g. Girona/Reus for
+  Barcelona): searched for up to 3 chosen cities; flights are remapped to the
+  city with `leg.viaAirport` set and a coach line (`arrivalTransfer`) instead of
+  the usual airport transfer. The transfer line now lives in `legCostLines`.
 - If nothing is found, `runSearch` widens to airports within 2 then 3 hours
   and says so (`allowWiden`).
 - `/api/health` (`src/app/api/health/route.ts`): checks the real flight, hotel

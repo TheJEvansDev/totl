@@ -137,6 +137,14 @@ export function assessFlight(flight: FlightOption, dest: Destination, people: nu
 }
 
 /** Day tickets into the centre for a stay too far out to walk, all travellers. */
+/**
+ * Coach or train between an out-of-town arrival airport (e.g. Girona for
+ * Barcelona) and the city. A rough estimate from the distance.
+ */
+export function arrivalTransfer(km: number): { oneWayPP: number; hours: number } {
+  return { oneWayPP: Math.round(4 + km * 0.12), hours: Math.round((km / 60 + 0.25) * 4) / 4 };
+}
+
 export function stayTransportCost(stay: StayOption, dest: Destination, nights: number, people: number): number {
   if (stay.centreKm === null || stay.centreKm <= P.walkableKm) return 0;
   return Math.round(dayTicketFor(dest) * people * nights);

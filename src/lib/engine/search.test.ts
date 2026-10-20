@@ -432,3 +432,25 @@ test("departure search offers whole cities and areas", async () => {
   assert.ok(!codes.includes("DUB"), "stays in the same country");
   console.log("areas:", "MAN+ →", codes.join(","), "| BRS+ →", areaAirports("BRS+").join(","), "| NYC →", areaAirports("NYC").join(","));
 });
+
+test("can fly into a nearby airport (Girona or Reus for Barcelona) with the coach costed in", async () => {
+  const parsed = parseRequest(request({ groups: [{ homeAirport: "STN", extraAirports: [], nearbyHours: 0, adults: 1, children: 0 }] }));
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, providers);
+  assert.ok(res.trips.every((t) => t.destination === "BCN"));
+  const legs = res.trips.flatMap((t) => [...t.legs, ...t.airportOptions.map((o) => o.leg)]);
+  const via = legs.filter((l) => l.viaAirport);
+  assert.ok(via.length > 0, "no trips via a nearby airport");
+  assert.ok(via.every((l) => ["GRO", "REU"].includes(l.viaAirport!) && l.flight.destinationAirport === l.viaAirport));
+  assert.ok(legs.some((l) => !l.viaAirport), "Barcelona's own airport should still be there");
+  const option = res.trips.flatMap((t) => t.airportOptions).find((o) => o.leg.viaAirport)!;
+  const coach = option.costs.find((c) => c.label.startsWith("Coach between"));
+  assert.ok(coach && coach.amount > 0 && coach.estimated && coach.kind === "flight");
+  assert.ok(option.penalties.some((p) => p.label.includes("hrs each way")));
+  // Every trip has exactly one transfer line, tagged as part of the flights.
+  for (const t of res.trips) {
+    const transfers = t.costs.filter((c) => /^(Coach between|Airport transfers)/.test(c.label));
+    assert.equal(transfers.length, 1);
+    assert.equal(transfers[0].kind, "flight");
+  }
+});

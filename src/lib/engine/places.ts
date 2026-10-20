@@ -27,8 +27,8 @@ export function placesForTrips(trips: Trip[], req: SearchRequest): Places {
   const codes: string[] = [];
   for (const t of trips) {
     codes.push(t.destination);
-    for (const l of t.legs) codes.push(l.flight.origin, l.flight.returnAirport);
-    for (const o of t.airportOptions) codes.push(o.out, o.back);
+    for (const l of t.legs) codes.push(l.flight.origin, l.flight.returnAirport, l.flight.destinationAirport);
+    for (const o of t.airportOptions) codes.push(o.out, o.back, o.leg.flight.destinationAirport);
   }
   return { ...placesFor(req), ...collect(codes) };
 }

@@ -199,6 +199,8 @@ export interface GroupLeg {
   flight: FlightOption;
   groundNote: string;
   extraTravelHours: number;
+  /** Set when flying into a nearby airport instead of the city's own, e.g. GRO for Barcelona. */
+  viaAirport?: string;
 }
 
 export interface Trip {

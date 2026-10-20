@@ -109,13 +109,15 @@ export function TripDetail({ trip: original, sample, adults, children, onClose }
         const f = leg.flight;
         const airport = { name: airportName(f.origin) };
         const backAirport = { name: airportName(f.returnAirport) };
+        // Flying into a nearby airport (e.g. Girona for Barcelona) names it.
+        const into = leg.viaAirport ? airportName(leg.viaAirport) : dest.name;
         return (
           <div key={leg.groupId}>
             {multi && <p style={{ fontWeight: 700, margin: "8px 0 0" }}>{leg.groupId}</p>}
             <div className="flight">
               <b>{time(f.outDepart, tzOf(f.origin))}</b>
               <span>
-                {airport?.name} → {dest.name} · {airlineName(f.airline)}
+                {airport?.name} → {into} · {airlineName(f.airline)}
                 <br />
                 <span className="meta">
                   {shortDate(f.departDate)} · {duration(f.outDepart, f.outArrive)} · {f.outStops === 0 ? "direct" : `${f.outStops} stop`}
@@ -126,7 +128,7 @@ export function TripDetail({ trip: original, sample, adults, children, onClose }
             <div className="flight">
               <b>{time(f.retDepart, tz)}</b>
               <span>
-                {dest.name} → {backAirport?.name} · {airlineName(f.returnAirline)}
+                {into} → {backAirport?.name} · {airlineName(f.returnAirline)}
                 <br />
                 <span className="meta">
                   {shortDate(f.returnDate)} · {duration(f.retDepart, f.retArrive)} · {f.retStops === 0 ? "direct" : `${f.retStops} stop`}
@@ -151,10 +153,11 @@ export function TripDetail({ trip: original, sample, adults, children, onClose }
               const chosen = o.leg.flight.id === trip.legs[0].flight.id;
               const delta = Math.round(optionCost(o) - flightCost(trip));
               const name = airportName;
-              const title = o.out === o.back ? `${name(o.out)} return` : `Out of ${name(o.out)}, home into ${name(o.back)}`;
+              const via = o.leg.viaAirport && airportName(o.leg.viaAirport);
+              const title = (o.out === o.back ? `${name(o.out)} return` : `Out of ${name(o.out)}, home into ${name(o.back)}`) + (via ? `, via ${via}` : "");
               return (
                 <div
-                  key={`${o.out}>${o.back}`}
+                  key={o.leg.flight.id}
                   className={`option${chosen ? " option-chosen" : ""}${canSwapFlights ? " option-pick" : ""}`}
                   {...(canSwapFlights ? pickable(chosen, () => setTrip(swapFlights(trip, o)), `Use ${title}`) : {})}
                 >
