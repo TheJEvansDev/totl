@@ -511,6 +511,18 @@ export function SearchForm({
                   </select>
                 </label>
               )}
+              {d.mode === "flexible" && d.return > d.depart && (() => {
+                const nights = daysBetween(d.depart, d.return);
+                const tomorrow = addDays(todayUK(), 1);
+                const from = addDays(d.depart, -d.flexDays) < tomorrow ? tomorrow : addDays(d.depart, -d.flexDays);
+                return (
+                  <p className="fineprint" style={{ margin: 0 }}>
+                    Leaving any day from {shortDay(from)} to {shortDay(addDays(d.depart, d.flexDays))}, coming home up to {d.flexDays} day
+                    {d.flexDays > 1 ? "s" : ""} either side of {shortDay(d.return)}. Trips can be a night shorter or longer than your {nights}{" "}
+                    night{nights > 1 ? "s" : ""}, so {Math.max(1, nights - 1)} to {nights + 1} nights.
+                  </p>
+                );
+              })()}
             </>
           )}
         </div>

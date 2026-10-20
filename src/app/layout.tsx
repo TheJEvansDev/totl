@@ -32,13 +32,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <div className="appbar">
           <header className="shell topbar" style={{ padding: "14px 16px 10px" }}>
-            <Link href="/" className="brand">
+            {/* A full page load, so tapping the name always starts a fresh search. */}
+            <a href="/" className="brand">
               <span className="brand-name">
                 {APP_NAME.slice(0, -1)}
                 <span>{APP_NAME.slice(-1)}</span>
               </span>
               <span className="brand-tag">{APP_TAGLINE}</span>
-            </Link>
+            </a>
             <ThemeToggle />
           </header>
         </div>

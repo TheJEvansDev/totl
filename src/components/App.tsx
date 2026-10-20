@@ -74,11 +74,6 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
     setOpenTrip(null);
     savePrefs({ homeAirport: r.groups[0].homeAirport });
     try {
-      history.replaceState(null, "", `?q=${encodeSearch(r)}`);
-    } catch {
-      // URL update is a nicety only.
-    }
-    try {
       const response = await fetch("/api/search", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -126,6 +121,12 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
       ...(r.destination.mode === "cities" ? r.destination.cities : []),
     ];
     if (shared) {
+      // Clear the link from the address bar, so reloading starts a fresh search.
+      try {
+        history.replaceState(null, "", location.pathname);
+      } catch {
+        // Only a nicety.
+      }
       ensurePlaces(codesOf(shared)).then(() => {
         setReq({ ...shared });
         setIntent(shared.destination.mode === "anywhere" ? "anywhere" : "pick");
@@ -177,6 +178,20 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
   const closeTrip = useCallback(() => setOpenTrip(null), []);
   const showMap = (res?.destinations.length ?? 0) > 1;
 
+  /** Clear everything for a different search. Keeps only the home airport. */
+  function startOver() {
+    setReq(defaultRequest(req.groups[0].homeAirport));
+    setRes(null);
+    setLastReq(null);
+    setPlan(null);
+    setError("");
+    setOpenTrip(null);
+    setReviewing(false);
+    setIntent(null);
+    setFormKey((k) => k + 1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function flash(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 2500);
@@ -184,7 +199,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
 
   async function share() {
     try {
-      await navigator.clipboard.writeText(location.href);
+      await navigator.clipboard.writeText(`${location.origin}${location.pathname}?q=${encodeSearch(lastReq ?? req)}`);
       flash("Link copied. Send it to a friend.");
     } catch {
       flash("Couldn't copy. Copy the address bar instead.");
@@ -220,7 +235,11 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
       ) : (
         <div className="intent-bar">
           <span>{INTENT_LABEL[intent]}</span>
-          <button type="button" className="btn-link" onClick={() => setIntent(null)}>Change</button>
+          <span>
+            <button type="button" className="btn-link" onClick={startOver}>New search</button>
+            {" · "}
+            <button type="button" className="btn-link" onClick={() => setIntent(null)}>Change</button>
+          </span>
         </div>
       )}
       {aiEnabled && intent === "describe" && (
@@ -334,6 +353,7 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
               {trips.length > shown && (
                 <button className="btn" onClick={() => setShown((n) => n + 15)}>Show more trips</button>
               )}
+              <button type="button" className="btn" style={{ marginTop: 10 }} onClick={startOver}>Start a new search</button>
             </>
           )}
           {tab === "calendar" && res.heatmap && <Heatmap data={res.heatmap} onPick={setOpenTrip} />}
