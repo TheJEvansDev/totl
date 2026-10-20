@@ -75,6 +75,8 @@ export const LIMITS = {
   liveDestinations: 7,
   /** Live "same flights, other countries' prices": trips checked, and countries (incl. the UK) per trip. */
   liveMarketTrips: 1,
+  /** Live hotel prices: date/destination combos priced per search (one lookup each). */
+  liveStayLookups: 4,
   liveMarkets: 5,
   maxTravellers: 9,
 };

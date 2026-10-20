@@ -80,7 +80,7 @@ prices, clearly labelled on screen. Add keys and it switches automatically:
 | Variable | What it's for | Where to get it |
 |---|---|---|
 | `SERPAPI_KEY` | Live flight prices (Google Flights) | serpapi.com → Dashboard → API key. Free plan: 250 lookups a month; one search uses about 10-20 |
-| `LITEAPI_KEY` | Hotel prices | LiteAPI dashboard → API keys (sandbox key is fine to start) |
+| `LITEAPI_KEY` | Hotel prices, only used without `SERPAPI_KEY` (Google Hotels is used then) | LiteAPI dashboard → API keys (sandbox key is fine to start) |
 | `ANTHROPIC_API_KEY` | "Describe your trip" box (hidden without it) | console.anthropic.com → API keys. Costs roughly 1-3p per description with the default model |
 | `FEEDBACK_WEBHOOK_URL` | Optional: sends feedback to a Discord channel | Discord channel → Edit → Integrations → Webhooks → New webhook → Copy URL |
 

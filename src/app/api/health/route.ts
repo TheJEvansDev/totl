@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAirport, getDestination } from "@/lib/data/places";
 import { addDays, todayUK } from "@/lib/dates";
+import { googleHotels } from "@/lib/providers/googlehotels";
 import { liteapiStays } from "@/lib/providers/liteapi";
 import { lookup, serpapiFlights } from "@/lib/providers/serpapi";
 import { createLimiter } from "@/lib/ratelimit";
@@ -80,6 +81,30 @@ async function checkFlights(key: string | undefined) {
   return out;
 }
 
+async function checkGoogleHotels(key: string) {
+  const t = todayUK();
+  try {
+    const stays = await googleHotels(key).search({
+      destination: getDestination("BCN")!,
+      checkin: addDays(t, 30),
+      checkout: addDays(t, 32),
+      adults: 2,
+      children: 0,
+      prefs: { type: "any", minRating: 7, maxCentreKm: 7 },
+    });
+    const cheapest = [...stays].sort((a, b) => a.total - b.total)[0];
+    return {
+      configured: true,
+      source: "Google Hotels via SerpApi (live). Uses 1 lookup.",
+      search: "Barcelona, 2 nights in 30 days, 2 adults, rated 7+, within 7 km",
+      priced: stays.length,
+      cheapest: cheapest ? { name: cheapest.name, total: cheapest.total, rating: cheapest.rating, km: cheapest.centreKm, type: cheapest.type } : null,
+    };
+  } catch (e) {
+    return { configured: true, error: short(e) };
+  }
+}
+
 async function checkHotels(key: string | undefined) {
   if (!key) return { configured: false, note: "Add LITEAPI_KEY in Vercel to use real hotel prices." };
   const out: Record<string, unknown> = { configured: true, keyType: key.startsWith("sand") ? "sandbox (test prices only)" : "live" };
@@ -118,7 +143,7 @@ export async function GET(req: Request) {
   if (limited(req)) return NextResponse.json({ error: "Wait a minute before checking again." }, { status: 429 });
   const [flights, hotels, rates] = await Promise.all([
     checkFlights(process.env.SERPAPI_KEY?.trim()),
-    checkHotels(process.env.LITEAPI_KEY?.trim()),
+    process.env.SERPAPI_KEY?.trim() ? checkGoogleHotels(process.env.SERPAPI_KEY.trim()) : checkHotels(process.env.LITEAPI_KEY?.trim()),
     getRates().then((r) => ({ source: r.source, date: r.date, eurPerGbp: r.rates.EUR })).catch((e) => ({ error: short(e) })),
   ]);
   return NextResponse.json(

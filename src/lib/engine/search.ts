@@ -451,7 +451,7 @@ export async function runSearch(
   const shortlist = new Set<string>();
   const bySmart = [...trips].sort((a, b) => a.smartScore - b.smartScore);
   const byTotal = [...trips].sort((a, b) => a.total - b.total);
-  const half = Math.ceil(LIMITS.stayLookups / 2);
+  const half = Math.ceil((providers.stays.live ? LIMITS.liveStayLookups : LIMITS.stayLookups) / 2);
   for (const list of ownStay ? [] : [bySmart, byTotal]) {
     let added = 0;
     for (const t of list) {

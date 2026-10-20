@@ -570,3 +570,23 @@ test("cabin bags cost extra on budget airlines; a small bag is free", async () =
   assert.equal(bagCost(ba, "cabin", 2), 0);
   assert.ok(bagCost(ryanair, "checked", 1) > bagCost(ryanair, "cabin", 1));
 });
+
+test("Google Hotels results map to stays with km from the centre and a 10-point rating", async () => {
+  const { toStay } = await import("../providers/googlehotels");
+  const bcn = getDestination("BCN")!;
+  const s = toStay(
+    { name: "Hotel Test", type: "hotel", property_token: "abc", gps_coordinates: { latitude: 41.39, longitude: 2.17 }, total_rate: { extracted_lowest: 412.4 }, overall_rating: 4.3, link: "https://example.com" },
+    3,
+    bcn,
+    "",
+  )!;
+  assert.equal(s.total, 412);
+  assert.equal(s.rating, 8.6);
+  assert.ok(s.centreKm !== null && s.centreKm < 1);
+  assert.equal(s.type, "hotel");
+  // No total: nightly rate times nights. Holiday rentals count as apartments.
+  const r = toStay({ name: "Flat", type: "vacation rental", gps_coordinates: { latitude: 41.4, longitude: 2.19 }, rate_per_night: { extracted_lowest: 80 } }, 3, bcn, "u")!;
+  assert.equal(r.total, 240);
+  assert.equal(r.type, "apartment");
+  assert.equal(toStay({ name: "No price", gps_coordinates: { latitude: 41.4, longitude: 2.19 } }, 3, bcn, ""), null);
+});

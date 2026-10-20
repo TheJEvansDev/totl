@@ -2,6 +2,7 @@
 // Flights are live only (Google Flights via SerpApi); cached Travelpayouts
 // prices are no longer used.
 
+import { googleHotels } from "./googlehotels";
 import { liteapiStays } from "./liteapi";
 import { sampleFlights, sampleStays } from "./sample";
 import { serpapiFlights } from "./serpapi";
@@ -12,6 +13,7 @@ export function getProviders(): { flights: FlightProvider; stays: StayProvider }
   const liteKey = process.env.LITEAPI_KEY?.trim();
   return {
     flights: serpKey ? serpapiFlights(serpKey) : sampleFlights,
-    stays: liteKey ? liteapiStays(liteKey) : sampleStays,
+    // Google Hotels when there's a SerpApi key: live prices without LiteAPI's business sign-up.
+    stays: serpKey ? googleHotels(serpKey) : liteKey ? liteapiStays(liteKey) : sampleStays,
   };
 }

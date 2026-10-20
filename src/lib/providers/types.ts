@@ -75,6 +75,8 @@ export interface StayProvider {
   id: string;
   label: string;
   sample: boolean;
+  /** Live prices: each search is a paid lookup, so fewer are made. */
+  live?: boolean;
   /** Real (or sample) stays for exact dates. Expensive: only for shortlisted trips. */
   search(q: StayQuery): Promise<StayOption[]>;
 }

@@ -26,6 +26,10 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   via SerpApi, `SERPAPI_KEY`), one-way lookups per exact date with all airports
   comma-separated (`searchOneWayDates`), capped at `LIMITS.liveLookups` per
   search. Travelpayouts (cached) is no longer wired in; don't bring it back.
+  Stays: `googlehotels.ts` (Google Hotels via the same SerpApi key) when
+  `SERPAPI_KEY` is set, else LiteAPI (live key needs business details), else
+  sample. Live stays price `LIMITS.liveStayLookups` combos; the rest are scaled
+  typical prices.
 - `src/lib/ai/plan.ts`: "Describe your trip" → structured search via Claude.
 - `src/lib/data/places.ts`: worldwide airports/cities (server only, from
   `world-airports.json`, rebuilt with `scripts/build-airports.py`), metro city
