@@ -454,3 +454,19 @@ test("can fly into a nearby airport (Girona or Reus for Barcelona) with the coac
     assert.equal(transfers[0].kind, "flight");
   }
 });
+
+test("falls back to the nearest dates with prices when the exact dates have none", async () => {
+  // Fares only exist from 5 days after the chosen dates.
+  const from = addDays(start, 5);
+  const sparse = {
+    ...sampleFlights,
+    search: async (q: Parameters<typeof sampleFlights.search>[0]) => (await sampleFlights.search({ ...q, departFrom: from > q.departFrom ? from : q.departFrom })).filter((f) => f.departDate >= from),
+    searchOneWay: async (q: Parameters<typeof sampleFlights.searchOneWay>[0]) => (await sampleFlights.searchOneWay(q)).filter((f) => f.date >= from),
+  };
+  const parsed = parseRequest(request({ groups: [{ homeAirport: "BRS", nearbyHours: 3, adults: 1, returnTo: "BRS" }], dates: { mode: "flexible", depart: start, return: addDays(start, 3), flexDays: 1 } }));
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, { flights: sparse, stays: sampleStays });
+  assert.ok(res.trips.length > 0, "found trips on nearby dates");
+  assert.ok(res.trips.every((t) => t.depart >= from && t.legs[0].flight.returnAirport === "BRS"));
+  assert.match(res.meta.warnings[0], /nearest dates/);
+});

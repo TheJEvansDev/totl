@@ -9,6 +9,7 @@ import { getRates } from "@/lib/rates";
 // Checks the flight, hotel and exchange-rate connections with the real keys
 // and reports what came back. Never returns the keys themselves.
 //   /api/health
+//   /api/health?route=BRS-BCN&month=2026-12 (cached fares on one route)
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -129,8 +130,49 @@ async function checkHotels(key: string | undefined) {
   return out;
 }
 
+/**
+ * Which dates have cached fares on one route, both ways, for one month.
+ *   /api/health?route=BRS-BCN&month=2026-12
+ */
+async function checkRoute(token: string | undefined, route: string, month: string) {
+  if (!token) return { configured: false };
+  const [from, to] = route.toUpperCase().split("-");
+  if (!/^[A-Z]{3}$/.test(from ?? "") || !/^[A-Z]{3}$/.test(to ?? "") || !/^\d{4}-\d{2}$/.test(month)) {
+    return { error: "Use ?route=BRS-BCN&month=2026-12" };
+  }
+  const get = async (origin: string, destination: string, oneWay: boolean) => {
+    const url = new URL("https://api.travelpayouts.com/aviasales/v3/prices_for_dates");
+    Object.entries({ origin, destination, departure_at: month, one_way: String(oneWay), currency: "gbp", market: "gb", limit: "1000", sorting: "price", direct: "false", unique: "false" }).forEach(([k, v]) =>
+      url.searchParams.set(k, v),
+    );
+    const { status, body } = await rawJson(url.toString(), { headers: { "X-Access-Token": token } });
+    const data = (body as { data?: Record<string, unknown>[] })?.data;
+    if (!Array.isArray(data)) return { status, error: (body as { error?: string })?.error ?? "no data" };
+    const fares = data
+      .map((t) => ({
+        date: String(t.departure_at ?? "").slice(0, 10),
+        back: t.return_at ? String(t.return_at).slice(0, 10) : undefined,
+        price: t.price,
+        airline: t.airline,
+        from: t.origin_airport,
+        to: t.destination_airport,
+        stops: t.transfers,
+      }))
+      .sort((x, y) => (x.date < y.date ? -1 : 1));
+    return { status, count: fares.length, fares: fares.slice(0, 60) };
+  };
+  const [out, back, returns] = await Promise.all([get(from, to, true), get(to, from, true), get(from, to, false)]);
+  return { route: `${from} to ${to}`, month, oneWayOut: out, oneWayBack: back, returnTrips: returns };
+}
+
 export async function GET(req: Request) {
   if (limited(req)) return NextResponse.json({ error: "Wait a minute before checking again." }, { status: 429 });
+  const params = new URL(req.url).searchParams;
+  const route = params.get("route");
+  if (route) {
+    const result = await checkRoute(process.env.TRAVELPAYOUTS_TOKEN?.trim(), route, params.get("month") ?? addDays(todayUK(), 35).slice(0, 7)).catch((e) => ({ error: short(e) }));
+    return NextResponse.json(result, { headers: { "cache-control": "no-store" } });
+  }
   const [flights, hotels, rates] = await Promise.all([
     checkFlights(process.env.TRAVELPAYOUTS_TOKEN?.trim()),
     checkHotels(process.env.LITEAPI_KEY?.trim()),

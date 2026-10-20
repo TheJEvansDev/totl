@@ -10,7 +10,7 @@ import type { Airport } from "../data/airports";
 import { destinationAirports, getAirport, getDestination, nearbyAirports, nearbyArrivalAirports } from "../data/places";
 import type { Destination } from "../data/destinations";
 import { airlineName } from "../data/destinations";
-import { addDays, dayName, dayOfWeek, daysBetween, localHour } from "../dates";
+import { addDays, dayName, dayOfWeek, daysBetween, localHour, todayUK } from "../dates";
 import { estimatedStay } from "../providers/estimate";
 import type { FlightProvider, StayProvider } from "../providers/types";
 import type {
@@ -410,6 +410,26 @@ export async function runSearch(
       const res = await runSearch(wider, providers, false);
       if (res.trips.length > 0) {
         res.meta.warnings.unshift(`No flights from your airport on those dates, so we've included airports within ${hours} hours.`);
+        return res;
+      }
+    }
+    // Still nothing: cached prices don't cover every date, so try a week either
+    // side and a couple of nights more or less, keeping the same airports.
+    if (allowWiden) {
+      const wider: SearchRequest = {
+        ...req,
+        dates: {
+          mode: "window",
+          from: addDays(plan.departFrom, -7) > addDays(todayUK(), 1) ? addDays(plan.departFrom, -7) : addDays(todayUK(), 1),
+          to: addDays(plan.departTo, 7),
+          minNights: Math.max(1, plan.minNights - 2),
+          maxNights: Math.min(LIMITS.maxNights, plan.maxNights + 2),
+          weekendsOnly: false,
+        },
+      };
+      const res = await runSearch(wider, providers, false).catch(() => null);
+      if (res && res.trips.length > 0) {
+        res.meta.warnings.unshift("We don't have prices for your exact dates, so these are the nearest dates we do. Prices for other dates may exist on the booking sites.");
         return res;
       }
     }

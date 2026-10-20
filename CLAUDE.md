@@ -52,10 +52,11 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   Barcelona): searched for up to 3 chosen cities; flights are remapped to the
   city with `leg.viaAirport` set and a coach line (`arrivalTransfer`) instead of
   the usual airport transfer. The transfer line now lives in `legCostLines`.
-- If nothing is found, `runSearch` widens to airports within 2 then 3 hours
-  and says so (`allowWiden`).
+- If nothing is found, `runSearch` widens to airports within 2 then 3 hours,
+  then to dates a week either side (±2 nights), and says so (`allowWiden`).
 - `/api/health` (`src/app/api/health/route.ts`): checks the real flight, hotel
   and rates connections with the deployed keys and shows raw data shapes.
+  `?route=BRS-BCN&month=2026-12` lists cached fares on one route both ways.
   Never return key values from it.
 - `src/components/`: UI. `App.tsx` holds state; `Sheet.tsx` is the swipeable sheet;
   `SearchForm.tsx` is step-by-step (`Step`), folded after a search via `formKey`.
