@@ -116,7 +116,9 @@ automatically.
   best). "Anywhere" searches only cover the places that fit in one lookup per
   date for now; Google's Explore results would make this much better.
 - Cached Travelpayouts prices are no longer used (`travelpayouts.ts` is kept
-  but not wired in), so the "other countries' booking sites" check is off.
+  but not wired in). The "same flights, other countries" check is live: the
+  top trip's two tickets are re-checked on Google Flights set to the
+  destination's country, Türkiye, India and Brazil (8 lookups).
 - **SerpApi hasn't been tested with a real key yet.** The network here can't
   reach it; `/api/health` shows what comes back. The code follows their documented formats
   and handles errors, but the first real search may need small fixes.

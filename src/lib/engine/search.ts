@@ -734,6 +734,7 @@ async function mixedAirportTrips(
             returnBookingUrl: b.bookingUrl,
             seller: o.seller && o.seller === b.seller ? o.seller : null,
             seenHoursAgo: o.seenHoursAgo !== null && b.seenHoursAgo !== null ? Math.max(o.seenHoursAgo, b.seenHoursAgo) : null,
+            ...(o.liveLeg && b.liveLeg ? { liveLegs: [o.liveLeg, b.liveLeg] } : {}),
           });
         }
       }
@@ -749,11 +750,13 @@ async function mixedAirportTrips(
  */
 async function checkBookingCountries(trips: Trip[], req: SearchRequest, provider: FlightProvider, warnings: string[]): Promise<void> {
   const home = getAirport(req.groups[0].homeAirport)!;
-  // Two separate one-way tickets are compared leg by leg elsewhere; check return tickets only.
-  const eligible = trips.filter((t) => t.legs.length === 1 && !t.legs[0].flight.returnBookingUrl);
+  // Cached prices: return tickets only. Live prices: both one-way tickets,
+  // re-checked for the top trip only, since every country costs two lookups.
+  const eligible = trips.filter((t) => t.legs.length === 1 && (provider.live ? t.legs[0].flight.liveLegs : !t.legs[0].flight.returnBookingUrl));
   const picked = new Map<string, Trip>();
-  for (const list of [[...eligible].sort((a, b) => a.smartScore - b.smartScore), [...eligible].sort((a, b) => a.total - b.total)]) {
-    for (const t of list.slice(0, LIMITS.marketChecks)) picked.set(t.legs[0].flight.id, t);
+  const lists = [[...eligible].sort((a, b) => a.smartScore - b.smartScore), ...(provider.live ? [] : [[...eligible].sort((a, b) => a.total - b.total)])];
+  for (const list of lists) {
+    for (const t of list.slice(0, provider.live ? LIMITS.liveMarketTrips : LIMITS.marketChecks)) picked.set(t.legs[0].flight.id, t);
   }
   if (picked.size === 0) return;
   const { rates } = await getRates();
@@ -764,7 +767,8 @@ async function checkBookingCountries(trips: Trip[], req: SearchRequest, provider
     // Priced to the airport actually flown into (Girona rather than Barcelona).
     const dest = getDestination(f.destinationAirport) ?? getDestination(t.destination)!;
     try {
-      const found = await provider.checkMarkets(f, home, dest, marketsToCheck(home.countryCode, dest.countryCode), req.groups[0].adults, req.groups[0].children);
+      const markets = marketsToCheck(home.countryCode, dest.countryCode, provider.live ? LIMITS.liveMarkets : undefined);
+      const found = await provider.checkMarkets(f, home, dest, markets, req.groups[0].adults, req.groups[0].children);
       const people = t.legs[0].people;
       quotes.set(
         f.id,
@@ -775,10 +779,11 @@ async function checkBookingCountries(trips: Trip[], req: SearchRequest, provider
               market: m.code,
               countryName: m.countryName,
               currency: m.currency,
-              localAmount: Math.round(q.pricePerPerson * (rates[m.currency] ?? 1)),
+              localAmount: q.localAmount ?? Math.round(q.pricePerPerson * (rates[m.currency] ?? 1)),
               pricePerPerson: q.pricePerPerson,
               saving: Math.round((f.pricePerPerson - q.pricePerPerson) * people),
               bookingUrl: q.bookingUrl,
+              returnBookingUrl: q.returnBookingUrl ?? null,
               seenHoursAgo: q.seenHoursAgo,
             };
           })

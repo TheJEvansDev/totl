@@ -303,7 +303,8 @@ export function TripDetail({ trip: original, sample, adults, children, onClose }
         <>
           <h3>Same flights, other booking sites</h3>
           <p className="fineprint" style={{ marginTop: 0 }}>
-            Airlines and booking sites charge different prices depending on which country&apos;s version of the site you book on.
+            Airlines and booking sites charge different prices depending on which country&apos;s version of the site you book on. These are the
+            exact same flights, checked live on Google Flights set to each country.
           </p>
           <div className="options">
             <div className="option option-chosen">
@@ -322,16 +323,23 @@ export function TripDetail({ trip: original, sample, adults, children, onClose }
                 </div>
                 <div className="meta">
                   {localMoney(m.localAmount, m.currency)} pp ≈ {money(m.pricePerPerson)} pp in your currency
-                  {m.seenHoursAgo !== null ? ` · seen ${m.seenHoursAgo} hrs ago` : ""}
+                  {m.seenHoursAgo === 0 ? " · checked live" : m.seenHoursAgo !== null ? ` · seen ${m.seenHoursAgo} hrs ago` : ""}
                 </div>
-                <a className="btn-link" href={m.bookingUrl} target="_blank" rel="noopener noreferrer sponsored">Check this price</a>
+                {m.returnBookingUrl ? (
+                  <>
+                    <a className="btn-link" href={m.bookingUrl} target="_blank" rel="noopener noreferrer">Check the outbound price</a>{" "}
+                    <a className="btn-link" href={m.returnBookingUrl} target="_blank" rel="noopener noreferrer">Check the return price</a>
+                  </>
+                ) : (
+                  <a className="btn-link" href={m.bookingUrl} target="_blank" rel="noopener noreferrer sponsored">Check this price</a>
+                )}
               </div>
             ))}
           </div>
           <p className="fineprint">
             To get another country&apos;s price you may need to set the booking site&apos;s country and currency to that country. Pay in that
             currency with a card that has no foreign transaction fees, or the saving can disappear. Some fares are only for residents of
-            that country, so check the fare rules before booking. Prices were found recently and can change.
+            that country, so check the fare rules before booking. Converted at today&apos;s European Central Bank rate; your card&apos;s rate may differ slightly.
           </p>
         </>
       )}

@@ -73,5 +73,8 @@ export const LIMITS = {
   /** Live searches: most paid lookups one search may spend, and destinations per search. */
   liveLookups: 30,
   liveDestinations: 7,
+  /** Live "same flights, other countries' prices": trips checked, and countries (incl. the UK) per trip. */
+  liveMarketTrips: 1,
+  liveMarkets: 5,
   maxTravellers: 9,
 };

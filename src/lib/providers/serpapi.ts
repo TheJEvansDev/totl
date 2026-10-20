@@ -9,9 +9,11 @@
 import type { Airport } from "../data/airports";
 import { destinationAirports, getAirport } from "../data/places";
 import { localToUtc } from "../dates";
-import type { OneWayFlight } from "../types";
+import type { Market } from "../markets";
+import { getRates } from "../rates";
+import type { FlightOption, LiveLeg, OneWayFlight } from "../types";
 import { TtlCache, mapLimit } from "../util";
-import type { FlightProvider, LiveOneWayQuery } from "./types";
+import type { FlightProvider, LiveOneWayQuery, MarketQuote } from "./types";
 
 const API = "https://serpapi.com/search.json";
 /** Same search within this time reuses the result rather than spending another lookup. */
@@ -87,13 +89,14 @@ export function toOneWay(it: SerpItinerary, homeCodes: Set<string>, destOf: Map<
   const arrive = toUtc(last.arrival_airport?.time, toId);
   if (!depart || !arrive) return null;
   const airline = first.flight_number?.split(" ")[0] || first.airline || "";
+  const date = first.departure_airport!.time!.slice(0, 10);
   return {
     id: `gf-${fromId}-${toId}-${segs.map((s) => s.flight_number ?? "").join("+")}-${depart}`,
     source: "serpapi",
     from: direction === "out" ? home : dest,
     to: direction === "out" ? dest : home,
     airline,
-    date: first.departure_airport!.time!.slice(0, 10),
+    date,
     depart,
     arrive,
     stops: segs.length - 1,
@@ -102,7 +105,60 @@ export function toOneWay(it: SerpItinerary, homeCodes: Set<string>, destOf: Map<
     bookingUrl: searchUrl,
     seenHoursAgo: 0,
     seller: null,
+    liveLeg: { from: fromId, to: toId, date, flightNumbers: flightNumbers(it) },
   };
+}
+
+const flightNumbers = (it: SerpItinerary) => (it.flights ?? []).map((s) => s.flight_number ?? "").filter(Boolean);
+
+/** Google's country setting for a booking country ("uk" rather than "gb"). */
+const googleCountry = (m: Market) => (m.code === "gb" ? "uk" : m.code);
+
+/**
+ * The same two tickets priced with Google Flights set to other countries, in
+ * their currency. Only exact matches (same flight numbers) count. Two lookups
+ * per country.
+ */
+async function sameFlightsElsewhere(key: string, flight: FlightOption, markets: Market[]): Promise<MarketQuote[]> {
+  const legs = flight.liveLegs;
+  if (!legs || legs.length !== 2 || legs.some((l) => l.flightNumbers.length === 0)) return [];
+  const { rates } = await getRates();
+  const priceLeg = async (l: LiveLeg, m: Market) => {
+    const body = await lookup(key, {
+      departure_id: l.from,
+      arrival_id: l.to,
+      outbound_date: l.date,
+      type: "2",
+      adults: "1",
+      currency: m.currency,
+      hl: "en",
+      gl: googleCountry(m),
+    });
+    const wanted = l.flightNumbers.join("+");
+    const same = [...(body.best_flights ?? []), ...(body.other_flights ?? [])].find((it) => flightNumbers(it).join("+") === wanted);
+    return same?.price ? { price: same.price, url: body.search_metadata?.google_flights_url ?? "https://www.google.com/travel/flights" } : null;
+  };
+  // The price we show was found with the UK setting.
+  const others = markets.filter((m) => m.code !== "gb" && rates[m.currency]);
+  const quotes = await mapLimit(others, 4, async (m): Promise<MarketQuote | null> => {
+    try {
+      const [out, back] = await Promise.all(legs.map((l) => priceLeg(l, m)));
+      if (!out || !back) return null;
+      const local = out.price + back.price;
+      return {
+        market: m.code,
+        localAmount: Math.round(local),
+        pricePerPerson: Math.round(local / rates[m.currency]),
+        bookingUrl: out.url,
+        returnBookingUrl: back.url,
+        seenHoursAgo: 0,
+      };
+    } catch (err) {
+      console.error("live market check failed", m.code, err);
+      return null;
+    }
+  });
+  return quotes.filter((q): q is MarketQuote => q !== null);
 }
 
 /** How many lookups a live one-way search will spend. */
@@ -125,8 +181,8 @@ export function serpapiFlights(key: string): FlightProvider {
     async searchOneWay() {
       return [];
     },
-    async checkMarkets() {
-      return [];
+    checkMarkets(flight, _origin, _dest, markets) {
+      return sameFlightsElsewhere(key, flight, markets);
     },
     async searchOneWayDates(q: LiveOneWayQuery): Promise<OneWayFlight[]> {
       const destOf = new Map<string, string>();

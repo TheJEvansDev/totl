@@ -86,6 +86,8 @@ export interface FlightOption {
   returnBookingUrl: string | null;
   /** How old the cached price is, if known. */
   seenHoursAgo: number | null;
+  /** Live prices: the out and back tickets, to re-check them on other countries' sites. */
+  liveLegs?: LiveLeg[];
 }
 
 export interface StayOption {
@@ -121,6 +123,16 @@ export interface OneWayFlight {
   bookingUrl: string;
   seenHoursAgo: number | null;
   seller?: string | null;
+  /** Live prices: what's needed to look up this exact flight again. */
+  liveLeg?: LiveLeg;
+}
+
+/** One live one-way ticket: the real airports, date and flight numbers. */
+export interface LiveLeg {
+  from: string;
+  to: string;
+  date: string;
+  flightNumbers: string[];
 }
 
 export interface StayAlternative {
@@ -167,6 +179,8 @@ export interface MarketPrice {
   /** For everyone travelling, in GBP, vs the price we show. Positive = cheaper. */
   saving: number;
   bookingUrl: string;
+  /** Live prices are two one-way tickets: the return's link. */
+  returnBookingUrl?: string | null;
   seenHoursAgo: number | null;
 }
 

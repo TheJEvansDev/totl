@@ -40,7 +40,10 @@ export interface LiveOneWayQuery {
 export interface MarketQuote {
   market: string;
   pricePerPerson: number; // GBP
+  /** Per person in the market's own currency, when the provider gives it. */
+  localAmount?: number;
   bookingUrl: string;
+  returnBookingUrl?: string | null;
   seenHoursAgo: number | null;
 }
 

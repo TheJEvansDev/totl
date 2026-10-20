@@ -38,7 +38,8 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   `places` in search responses (`src/lib/client/places.ts`).
 - Money is GBP on the server. Server text writes amounts as `{£123}`; the UI
   converts with `moneyText()`/`money()` into the chosen currency (`/api/rates`, ECB).
-- Booking-country prices (off with live flights: the provider returns none) (`src/lib/markets.ts`, `checkBookingCountries` in
+- Booking-country prices (live: top trip only, both one-way tickets re-checked
+  with Google's `gl`/`currency` set per country, exact flight numbers only) (`src/lib/markets.ts`, `checkBookingCountries` in
   search.ts): top trips are re-priced on other countries' sites (Travelpayouts
   `market` param). Shown as an option, never added to totals; always with the
   residency/card caveats.

@@ -521,3 +521,42 @@ test("Google Flights (SerpApi) results map to one-way flights", async () => {
   // Flights to somewhere else, or from an airport they didn't pick, are dropped.
   assert.equal(toOneWay(it, new Set(["CWL"]), destOf, "out", ""), null);
 });
+
+test("live other-country prices only count the exact same flights", async () => {
+  const { serpapiFlights } = await import("../providers/serpapi");
+  const { marketByCode } = await import("../markets");
+  const { getRates } = await import("../rates");
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = new URL(String(input));
+    if (url.hostname !== "serpapi.com") throw new Error("offline");
+    const gl = url.searchParams.get("gl");
+    const numbers = url.searchParams.get("departure_id") === "BRS" ? ["U2 1"] : ["U2 2"];
+    const body = {
+      search_metadata: { google_flights_url: `https://www.google.com/travel/flights?gl=${gl}` },
+      // A cheaper but different flight, which must be ignored, then the same one.
+      other_flights: [
+        { price: 1, flights: [{ flight_number: "FR 9" }] },
+        ...(gl === "tr" ? [{ price: 1500, flights: numbers.map((n) => ({ flight_number: n })) }] : []),
+      ],
+    };
+    return new Response(JSON.stringify(body), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const flight = {
+      liveLegs: [
+        { from: "BRS", to: "BCN", date: "2026-12-01", flightNumbers: ["U2 1"] },
+        { from: "BCN", to: "BRS", date: "2026-12-05", flightNumbers: ["U2 2"] },
+      ],
+    } as import("../types").FlightOption;
+    const quotes = await serpapiFlights("test").checkMarkets(flight, getAirport("BRS")!, getDestination("BCN")!, [marketByCode("es")!, marketByCode("tr")!], 1, 0);
+    assert.equal(quotes.length, 1, "only Türkiye had the same flights");
+    const { rates } = await getRates();
+    assert.equal(quotes[0].market, "tr");
+    assert.equal(quotes[0].localAmount, 3000);
+    assert.equal(quotes[0].pricePerPerson, Math.round(3000 / rates.TRY));
+    assert.match(quotes[0].returnBookingUrl!, /gl=tr/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
