@@ -47,6 +47,9 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   penalties being tagged `kind: "flight" | "stay"`; keep tagging new ones.
 - If nothing is found, `runSearch` widens to airports within 2 then 3 hours
   and says so (`allowWiden`).
+- `/api/health` (`src/app/api/health/route.ts`): checks the real flight, hotel
+  and rates connections with the deployed keys and shows raw data shapes.
+  Never return key values from it.
 - `src/components/`: UI. `App.tsx` holds state; `Sheet.tsx` is the swipeable sheet;
   `SearchForm.tsx` is step-by-step (`Step`), folded after a search via `formKey`.
 - `src/lib/airlineSites.ts`: airline websites and Book buttons. Budget airlines
