@@ -39,6 +39,7 @@ import { marketByCode, marketsToCheck } from "../markets";
 import { getRates } from "../rates";
 import { AIRPORTS_PER_LOOKUP, lookupsFor } from "../providers/serpapi";
 import type { DateRadar } from "../providers/firecrawl";
+import type { DirectAirlines } from "../providers/airlines";
 import { placesForTrips } from "./places";
 import { destinationList, expandDates } from "./request";
 
@@ -295,7 +296,7 @@ interface Candidate {
 
 export async function runSearch(
   req: SearchRequest,
-  providers: { flights: FlightProvider; stays: StayProvider; radar?: DateRadar },
+  providers: { flights: FlightProvider; stays: StayProvider; radar?: DateRadar; direct?: DirectAirlines },
   /** Try nearby airports if nothing is found. Off for the widened retry itself. */
   allowWiden = true,
 ): Promise<SearchResponse> {
@@ -361,7 +362,7 @@ export async function runSearch(
       // and how out-of-one-airport, home-into-another trips are built.
       try {
         flights = flights.concat(
-          await mixedAirportTrips(group, airports, searchDestinations, plan, wantedPairs, providers.flights, flights, providers.radar, warnings),
+          await mixedAirportTrips(group, airports, searchDestinations, plan, wantedPairs, providers.flights, flights, providers.radar, warnings, providers.direct),
         );
       } catch (err) {
         if (err instanceof SearchError) throw err;
@@ -614,6 +615,20 @@ export async function runSearch(
 }
 
 /**
+ * The same flight can come from Google and from the airline itself: keep it
+ * once, at the lower price (the airline's own on a tie, for its direct link).
+ */
+export function sameFlightOnce(list: OneWayFlight[]): OneWayFlight[] {
+  const best = new Map<string, OneWayFlight>();
+  for (const f of list) {
+    const key = f.liveLeg ? `${f.liveLeg.from}|${f.liveLeg.to}|${f.date}|${f.liveLeg.flightNumbers.join("+")}` : f.id;
+    const cur = best.get(key);
+    if (!cur || f.price < cur.price) best.set(key, f);
+  }
+  return [...best.values()];
+}
+
+/**
  * Date pairs to check live, cheapest-looking first by the price calendar,
  * adding pairs while the live lookups stay within the limit. Pairs that share
  * dates with ones already chosen cost nothing extra, so they're kept too.
@@ -647,6 +662,7 @@ async function mixedAirportTrips(
   roundTrips: FlightOption[],
   radar?: DateRadar,
   notes: string[] = [],
+  direct?: DirectAirlines,
 ): Promise<FlightOption[]> {
   const people = group.adults + group.children;
   const cheapest = new Map<string, number>();
@@ -726,10 +742,19 @@ async function mixedAirportTrips(
       );
     }
     const base = { destinations: dests, adults: group.adults, children: group.children };
-    [outs, backs] = await Promise.all([
+    // Airlines' own fares cover every date in the search for one call per
+    // route, so they use all the dates, not just the ones checked on Google.
+    const allPairs = [...wantedPairs].map((p) => p.split("|"));
+    const allDeparts = [...new Set(allPairs.map((p) => p[0]))];
+    const allReturns = [...new Set(allPairs.map((p) => p[1]))];
+    const [gOut, gBack, dOut, dBack] = await Promise.all([
       provider.searchOneWayDates({ ...base, direction: "out", airports, dates: departs }),
       provider.searchOneWayDates({ ...base, direction: "back", airports: homeBack, dates: returns }),
+      direct ? direct.oneWays({ ...base, direction: "out", airports, dates: allDeparts }, LIMITS.directRoutes) : [],
+      direct ? direct.oneWays({ ...base, direction: "back", airports: homeBack, dates: allReturns }, LIMITS.directRoutes) : [],
     ]);
+    outs = sameFlightOnce([...dOut, ...gOut]);
+    backs = sameFlightOnce([...dBack, ...gBack]);
   } else {
     const fetchAll = (direction: "out" | "back", dateFrom: string, dateTo: string) =>
       mapLimit(airports, 4, (airport) =>
@@ -874,7 +899,7 @@ async function checkBookingCountries(trips: Trip[], req: SearchRequest, provider
 }
 
 function emptyResponse(
-  providers: { flights: FlightProvider; stays: StayProvider; radar?: DateRadar },
+  providers: { flights: FlightProvider; stays: StayProvider; radar?: DateRadar; direct?: DirectAirlines },
   warnings: string[],
   started: number,
   message: string,

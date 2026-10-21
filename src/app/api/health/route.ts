@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAirport, getDestination } from "@/lib/data/places";
 import { addDays, todayUK } from "@/lib/dates";
+import { directAirlines } from "@/lib/providers/airlines";
 import { priceCalendar } from "@/lib/providers/firecrawl";
 import { googleHotels } from "@/lib/providers/googlehotels";
 import { liteapiStays } from "@/lib/providers/liteapi";
@@ -145,7 +146,15 @@ async function checkFirecrawl(key: string | undefined) {
   try {
     const days = await priceCalendar(key, "BRS", "BCN", addDays(todayUK(), 60));
     const cheapest = [...days].sort((a, b) => a[1] - b[1])[0];
-    return { configured: true, source: "Skyscanner price calendar via Firecrawl (5 credits)", days: days.size, cheapest: cheapest ? { date: cheapest[0], price: cheapest[1] } : null };
+    const t = todayUK();
+    const ej = await directAirlines(key)
+      .oneWays({ direction: "out", airports: [getAirport("BRS")!], destinations: [getDestination("BCN")!], dates: Array.from({ length: 60 }, (_, i) => addDays(t, i)), adults: 1, children: 0 }, 1)
+      .catch((e) => short(e));
+    return {
+      configured: true,
+      calendar: { source: "Skyscanner price calendar via Firecrawl (5 credits)", days: days.size, cheapest: cheapest ? { date: cheapest[0], price: cheapest[1] } : null },
+      easyJet: typeof ej === "string" ? { error: ej } : { source: "easyJet's own fares via Firecrawl (1 credit)", flightsNext60Days: ej.length, cheapest: [...ej].sort((a, b) => a.price - b.price)[0] ?? null },
+    };
   } catch (e) {
     return { configured: true, error: short(e) };
   }

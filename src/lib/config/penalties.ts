@@ -75,6 +75,8 @@ export const LIMITS = {
   liveDestinations: 7,
   /** Live "anywhere" with the price calendar: places ranked by cheapest fare (one calendar call each). */
   radarDestinations: 12,
+  /** Airline-direct fares (easyJet via Firecrawl): routes read per direction, 1 credit each. */
+  directRoutes: 6,
   /** Live "same flights, other countries' prices": trips checked, and countries (incl. the UK) per trip. */
   liveMarketTrips: 1,
   /** Live hotel prices: date/destination combos priced per search (one lookup each). */

@@ -655,3 +655,57 @@ test("Firecrawl's Google Flights results map to one-way flights", async () => {
   assert.deepEqual(f.liveLeg?.flightNumbers, ["FR 3161"]);
   assert.equal(parseCalendar({ days: [{ date: "2026-11-30", amount: 20.67 }, { date: "2026-12-01", amount: null }] }).size, 1);
 });
+
+test("easyJet's own fares: parsed, merged with Google without duplicates, and cover every date", async () => {
+  const { easyjetToOneWay } = await import("../providers/airlines");
+  const { sameFlightOnce } = await import("./search");
+  const ej = easyjetToOneWay(
+    { flightNumber: "2705", departureAirport: "BRS", arrivalAirport: "BCN", outboundPrice: 28.99, departureDateTime: "2026-11-30T06:45:00", arrivalDateTime: "2026-11-30T09:50:00" },
+    "out",
+    "BRS",
+    "BCN",
+  )!;
+  assert.equal(ej.price, 28.99);
+  assert.equal(ej.depart, "2026-11-30T06:45:00.000Z");
+  assert.equal(ej.arrive, "2026-11-30T08:50:00.000Z");
+  assert.match(ej.bookingUrl, /easyjet\.com/);
+  // The same flight from Google at £29: kept once, at easyJet's price.
+  const google = { ...ej, id: "gf-x", source: "serpapi" as const, price: 29, bookingUrl: "https://www.google.com/travel/flights" };
+  const merged = sameFlightOnce([google, ej]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].source, "easyjet");
+
+  // Engine: airline fares reach dates the Google checks skipped.
+  const { lookupsFor } = await import("../providers/serpapi");
+  const live = {
+    ...sampleFlights,
+    live: true,
+    airportsPerLookup: 7,
+    search: async () => [],
+    searchOneWayDates: async (q: import("../providers/types").LiveOneWayQuery) => {
+      void lookupsFor(q);
+      return [];
+    },
+  };
+  const day = addDays(start, 3);
+  const back = addDays(day, 3);
+  const direct = {
+    routesFor: () => 1,
+    async oneWays(q: import("../providers/types").LiveOneWayQuery) {
+      const f = q.direction === "out" ? { from: "BRS", to: "BCN", date: day } : { from: "BCN", to: "BRS", date: back };
+      if (!q.dates.includes(f.date)) return [];
+      return [
+        easyjetToOneWay(
+          { flightNumber: "1", departureAirport: f.from, arrivalAirport: f.to, outboundPrice: 20, departureDateTime: `${f.date}T09:00:00`, arrivalDateTime: `${f.date}T12:00:00` },
+          q.direction,
+          "BRS",
+          "BCN",
+        )!,
+      ];
+    },
+  };
+  const parsed = parseRequest(request({ groups: [{ homeAirport: "BRS", nearbyHours: 0, adults: 1 }], dates: { mode: "flexible", depart: day, return: back, flexDays: 1 } }));
+  assert.ok(parsed.ok);
+  const res = await runSearch(parsed.value, { flights: live, stays: sampleStays, direct });
+  assert.ok(res.trips.some((t) => t.depart === day && t.return === back && t.legs[0].flight.airline === "U2"));
+});

@@ -33,6 +33,9 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   Firecrawl (`firecrawl.ts`, `FIRECRAWL_API_KEY`, 5 credits a call): Skyscanner
   price calendar as a radar (`pickCheapPairs` narrows dates, ranks "anywhere"
   places; never shown as prices), and live Google Flights as a backup source.
+  Airline-direct (`airlines.ts`): easyJet's own low-fare finder via Firecrawl
+  (1 credit per route+direction, a year of flights), merged with Google for
+  every date in the search; `sameFlightOnce` dedupes. Firecrawl refuses Ryanair.
 - `src/lib/ai/plan.ts`: "Describe your trip" → structured search via Claude.
 - `src/lib/data/places.ts`: worldwide airports/cities (server only, from
   `world-airports.json`, rebuilt with `scripts/build-airports.py`), metro city

@@ -60,7 +60,7 @@ export interface SearchRequest {
 
 export interface FlightOption {
   id: string;
-  source: "sample" | "travelpayouts" | "serpapi" | "firecrawl";
+  source: "sample" | "travelpayouts" | "serpapi" | "firecrawl" | "easyjet";
   origin: string; // airport code, outbound
   /** Airport you fly home into. Same as origin for a normal return ticket. */
   returnAirport: string;
@@ -113,7 +113,7 @@ export interface StayOption {
 /** One-way flight, used to build "out from A, back into B" trips. */
 export interface OneWayFlight {
   id: string;
-  source: "sample" | "travelpayouts" | "serpapi" | "firecrawl";
+  source: "sample" | "travelpayouts" | "serpapi" | "firecrawl" | "easyjet";
   from: string; // airport code (UK) or city code (destination)
   to: string;
   airline: string;
