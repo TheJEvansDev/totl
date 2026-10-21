@@ -709,3 +709,28 @@ test("easyJet's own fares: parsed, merged with Google without duplicates, and co
   const res = await runSearch(parsed.value, { flights: live, stays: sampleStays, direct });
   assert.ok(res.trips.some((t) => t.depart === day && t.return === back && t.legs[0].flight.airline === "U2"));
 });
+
+test("Booking.com stays include charges paid at the property, skip hostels, and merge with Google Hotels", async () => {
+  const { bookingToStay, withBooking } = await import("../providers/booking");
+  const bcn = getDestination("BCN")!;
+  const q = { destination: bcn, checkin: "2026-11-30", checkout: "2026-12-05", adults: 2, children: 0, prefs: { type: "any" as const, minRating: 7.5, maxCentreKm: 4 } };
+  const hotel = { hotel_id: 1, name: "Hotel Test", accommodation_type_id: 204, latitude: 41.39, longitude: 2.17, price: { amount: 300, currency: "GBP" }, excluded_charges: { amount: 34.9, currency: "GBP" }, review_score: 8.4, url: "https://www.booking.com/hotel/es/test.html" };
+  const s = bookingToStay(hotel, bcn, q)!;
+  assert.equal(s.total, 335, "city tax added");
+  assert.match(s.bookingUrl, /checkin=2026-11-30/);
+  assert.equal(bookingToStay({ ...hotel, accommodation_type_id: 203 }, bcn, q), null, "hostel type skipped");
+  assert.equal(bookingToStay({ ...hotel, name: "Generator Barcelona", accommodation_type_id: 204 }, bcn, q), null, "hostel name skipped");
+
+  // Merging: the same hotel from both sources is kept once, at the lower price.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ success: true, data: { alexandria: [{ data: { results: [hotel] } }] } }))) as typeof fetch;
+  try {
+    const google = { id: "g", label: "G", sample: false, search: async () => [{ ...s, id: "gh-1", source: "google" as const, total: 360 }] };
+    const merged = await withBooking(google, "k", 1).search(q);
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0].source, "booking");
+    assert.equal(merged[0].total, 335);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

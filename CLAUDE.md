@@ -36,6 +36,9 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   Airline-direct (`airlines.ts`): easyJet's own low-fare finder via Firecrawl
   (1 credit per route+direction, a year of flights), merged with Google for
   every date in the search; `sameFlightOnce` dedupes. Firecrawl refuses Ryanair.
+  Booking.com stays (`booking.ts`, `withBooking`): merged into the stay pool
+  for `LIMITS.bookingStaySearches` searches; totals include excluded charges
+  (city tax); hostels (type 203 or `HOSTEL` names) skipped.
 - `src/lib/ai/plan.ts`: "Describe your trip" → structured search via Claude.
 - `src/lib/data/places.ts`: worldwide airports/cities (server only, from
   `world-airports.json`, rebuilt with `scripts/build-airports.py`), metro city

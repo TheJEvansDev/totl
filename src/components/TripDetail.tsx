@@ -196,6 +196,7 @@ export function TripDetail({ trip: original, sample, adults, children, onClose }
             {trip.stay.rating ? ` · rated ${trip.stay.rating}/10` : ""}
 
             {trip.stay.freeCancellation === true ? " · free cancellation" : trip.stay.freeCancellation === false ? " · non-refundable" : ""}
+            {trip.stay.source === "booking" ? " · price includes city tax and charges paid at the property" : ""}
           </span>
           {trip.stay.centreKm !== null && (
             <>
@@ -291,7 +292,7 @@ export function TripDetail({ trip: original, sample, adults, children, onClose }
         {trip.stay.source !== "none" && (
           <>
             <a className="btn" href={trip.stay.bookingUrl} target="_blank" rel="noopener noreferrer">
-              {trip.stayEstimated ? "See accommodation prices" : `Check ${trip.stay.name}`}
+              {trip.stayEstimated ? "See accommodation prices" : trip.stay.source === "booking" ? `Check ${trip.stay.name} on Booking.com` : `Check ${trip.stay.name}`}
             </a>
             <a className="btn" href={airbnbUrl(dest, trip.depart, trip.return, adults, children)} target="_blank" rel="noopener noreferrer">
               Compare on Airbnb

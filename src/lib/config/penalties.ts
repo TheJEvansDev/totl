@@ -77,6 +77,8 @@ export const LIMITS = {
   radarDestinations: 12,
   /** Airline-direct fares (easyJet via Firecrawl): routes read per direction, 1 credit each. */
   directRoutes: 6,
+  /** Booking.com stay searches per request (5 credits each), on top of Google Hotels. */
+  bookingStaySearches: 2,
   /** Live "same flights, other countries' prices": trips checked, and countries (incl. the UK) per trip. */
   liveMarketTrips: 1,
   /** Live hotel prices: date/destination combos priced per search (one lookup each). */

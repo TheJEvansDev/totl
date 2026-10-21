@@ -95,7 +95,7 @@ export interface FlightOption {
 
 export interface StayOption {
   id: string;
-  source: "sample" | "liteapi" | "google" | "estimate" | "none";
+  source: "sample" | "liteapi" | "google" | "booking" | "estimate" | "none";
   name: string;
   type: "hotel" | "apartment";
   rating: number | null; // 0-10

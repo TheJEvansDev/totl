@@ -4,6 +4,8 @@
 
 import { type DirectAirlines, directAirlines } from "./airlines";
 import { type DateRadar, firecrawlFlights, firecrawlRadar } from "./firecrawl";
+import { LIMITS } from "../config/penalties";
+import { withBooking } from "./booking";
 import { googleHotels } from "./googlehotels";
 import { liteapiStays } from "./liteapi";
 import { sampleFlights, sampleStays } from "./sample";
@@ -19,6 +21,12 @@ export function getProviders(): { flights: FlightProvider; stays: StayProvider; 
     // Skyscanner's price calendar (cached prices), only for choosing which dates and places to check live.
     ...(fcKey ? { radar: firecrawlRadar(fcKey), direct: directAirlines(fcKey) } : {}),
     // Google Hotels when there's a SerpApi key: live prices without LiteAPI's business sign-up.
-    stays: serpKey ? googleHotels(serpKey) : liteKey ? liteapiStays(liteKey) : sampleStays,
+    stays: fcKey
+      ? withBooking(serpKey ? googleHotels(serpKey) : liteKey ? liteapiStays(liteKey) : sampleStays, fcKey, LIMITS.bookingStaySearches)
+      : serpKey
+        ? googleHotels(serpKey)
+        : liteKey
+          ? liteapiStays(liteKey)
+          : sampleStays,
   };
 }
