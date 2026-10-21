@@ -56,6 +56,11 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   ("pick"), "Surprise me" (anywhere in budget, with "I'm feeling lucky" that
   opens the best trip), or describe (AI). The form hides the destination-mode
   switch once chosen.
+- Explore the globe (`Explore.tsx`, `Globe.tsx`, `/api/explore`, `src/lib/explore.ts`):
+  MapLibre globe with themed OpenFreeMap tiles; one SerpApi Google Travel Explore
+  lookup gives places, cheapest dates and fares (Google's latest, labelled as
+  such); tapping runs a live total-cost search for those dates. "I'm feeling
+  lucky" flies to one of the 3 cheapest and opens its best trip.
 - Customising a trip (`src/lib/customise.ts`): tapping an airport option or a
   stay alternative swaps it in without a new search. Relies on cost lines and
   penalties being tagged `kind: "flight" | "stay"`; keep tagging new ones.

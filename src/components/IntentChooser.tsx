@@ -1,9 +1,10 @@
 "use client";
 
-export type Intent = "pick" | "anywhere" | "describe";
+export type Intent = "pick" | "globe" | "anywhere" | "describe";
 
 const OPTIONS: { id: Intent; icon: string; title: string; text: string }[] = [
   { id: "pick", icon: "📍", title: "I know where I'm going", text: "Pick the place. We'll find the cheapest way to do it: dates, airports and where to stay." },
+  { id: "globe", icon: "🌍", title: "Explore the globe", text: "Spin the world and see the cheapest places to fly from your airport, with dates. Or let us pick one." },
   { id: "anywhere", icon: "🧭", title: "Surprise me", text: "Set a budget and see the best places you can go, or let us pick one for you." },
   { id: "describe", icon: "💬", title: "Describe my trip", text: "Tell us in your own words and we'll set the search up." },
 ];
@@ -31,6 +32,7 @@ export function IntentChooser({ onChoose, aiEnabled }: { onChoose: (i: Intent) =
 
 export const INTENT_LABEL: Record<Intent, string> = {
   pick: "I know where I'm going",
+  globe: "Explore the globe",
   anywhere: "Surprise me",
   describe: "Describe my trip",
 };

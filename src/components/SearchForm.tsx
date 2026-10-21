@@ -10,7 +10,7 @@ import { PlacePicker } from "./PlacePicker";
 
 export { defaultRequest } from "@/lib/defaults";
 
-function Seg<T extends string | number>({
+export function Seg<T extends string | number>({
   value,
   options,
   onChange,

@@ -10,6 +10,7 @@ import type { SearchRequest, SearchResponse, SortMode } from "@/lib/types";
 import { Compromises } from "./Compromises";
 import { Feedback } from "./Feedback";
 import { Heatmap } from "./Heatmap";
+import { Explore } from "./Explore";
 import { INTENT_LABEL, type Intent, IntentChooser } from "./IntentChooser";
 import { type PlanResult, PlanBox } from "./PlanBox";
 import { SearchForm, defaultRequest } from "./SearchForm";
@@ -265,6 +266,22 @@ export function App({ aiEnabled }: { aiEnabled: boolean }) {
           )}
           <span className="meta">Check the details below and change anything that&apos;s not right.</span>
         </div>
+      )}
+      {intent === "globe" && (
+        <Explore
+          home={req.groups[0].homeAirport}
+          busy={busy}
+          onHome={(p) => {
+            savePrefs({ homeAirport: p.code });
+            setReq((r) => ({ ...r, groups: [{ ...r.groups[0], homeAirport: p.code }, ...r.groups.slice(1)] }));
+          }}
+          onSearch={(p, lucky) => {
+            // Exactly the dates Google found cheapest, costed in full and checked live.
+            const r: SearchRequest = { ...req, destination: { mode: "cities", cities: [p.code] }, dates: { mode: "fixed", depart: p.depart, return: p.return } };
+            setReq(r);
+            run(r, lucky);
+          }}
+        />
       )}
       {(intent === "pick" || intent === "anywhere") && (
         <SearchForm

@@ -25,6 +25,9 @@ added to the home screen.
   choice, e.g. out of Gatwick when it's cheap, back into Bristol. Uses two
   one-way tickets and costs the train to the far airport. Every trip also
   shows the other airport combinations it compared
+- **Explore the globe:** spin a 3D globe and zoom into anywhere to see the
+  cheapest flights from your airport with their dates; tap one for the full
+  trip cost, or "I'm feeling lucky" to fly there and open the best trip
 - **Fly into a nearby airport:** Girona or Reus for Barcelona, Treviso for
   Venice and so on, with the coach into the city and the extra time costed in
 - **Total-cost engine** with a line-by-line breakdown. Every estimate is
