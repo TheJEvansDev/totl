@@ -137,7 +137,7 @@ export function TripDetail({ trip: original, sample, adults, children, onClose }
               <b>{time(f.retArrive, tzOf(f.returnAirport))}</b>
             </div>
             <p className="fineprint">
-              Local times. {f.source === "serpapi" ? "Live Google Flights price from when you searched." : f.seenHoursAgo !== null ? `Price seen ${f.seenHoursAgo} hours ago.` : "Cached price seen in the last 48 hours."}
+              Local times. {f.source === "serpapi" || f.source === "firecrawl" ? "Live Google Flights price from when you searched." : f.seenHoursAgo !== null ? `Price seen ${f.seenHoursAgo} hours ago.` : "Cached price seen in the last 48 hours."}
               {f.seller ? ` Found on ${f.seller}.` : ""}
               {f.selfTransfer && " Self-transfer: separate tickets, so if the first flight is late the airline won't rebook you."}
             </p>

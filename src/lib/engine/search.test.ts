@@ -596,3 +596,62 @@ test("hostels aren't offered as hotels", async () => {
   for (const n of ["Generator Barcelona", "Urbany Hostel BCN GO!", "Sant Jordi Hostels Sagrada Familia"]) assert.ok(HOSTEL.test(n), n);
   for (const n of ["Hotel Rec Barcelona", "Hostal Grau", "Seventy Barcelona"]) assert.ok(!HOSTEL.test(n), n);
 });
+
+test("live searches with too many dates use the price calendar to pick the cheapest ones", async () => {
+  const { lookupsFor } = await import("../providers/serpapi");
+  const { pickCheapPairs } = await import("./search");
+  // Unit: cheapest pairs first, within the limit.
+  const out = new Map([["2026-12-01", 10], ["2026-12-02", 50]]);
+  const back = new Map([["2026-12-04", 10], ["2026-12-05", 50]]);
+  const pairs = [["2026-12-02", "2026-12-05"], ["2026-12-01", "2026-12-04"], ["2026-12-01", "2026-12-05"]];
+  const picked = pickCheapPairs(pairs, out, back, (ps) => new Set(ps.flatMap((p) => p)).size, 2);
+  assert.deepEqual(picked, [["2026-12-01", "2026-12-04"]]);
+
+  // Engine: a month-long window no longer fails; it checks the cheapest dates.
+  let spent = 0;
+  const live = {
+    ...sampleFlights,
+    live: true,
+    airportsPerLookup: 7,
+    search: async () => [],
+    searchOneWayDates: async (q: import("../providers/types").LiveOneWayQuery) => {
+      spent += lookupsFor(q);
+      const all = await Promise.all(q.airports.map((airport) => sampleFlights.searchOneWay({ ...q, airport, dateFrom: q.dates[0], dateTo: q.dates[q.dates.length - 1] })));
+      return all.flat().filter((f) => q.dates.includes(f.date));
+    },
+  };
+  const cheapDay = addDays(start, 10);
+  const radar = {
+    async cheapestByDate() {
+      const m = new Map<string, number>();
+      for (let i = 0; i < 60; i++) m.set(addDays(start, i), addDays(start, i) === cheapDay || addDays(start, i) === addDays(cheapDay, 3) ? 9 : 80);
+      return m;
+    },
+  };
+  const big = parseRequest(request({ groups: [{ homeAirport: "BRS", nearbyHours: 0, adults: 1 }], dates: { mode: "window", from: start, to: addDays(start, 27), minNights: 2, maxNights: 7, weekendsOnly: false } }));
+  assert.ok(big.ok);
+  const res = await runSearch(big.value, { flights: live, stays: sampleStays, radar });
+  assert.ok(res.trips.length > 0);
+  assert.ok(spent <= 30, `spent ${spent}`);
+  assert.ok(res.trips.some((t) => t.depart === cheapDay), "the calendar's cheapest day was checked");
+  assert.ok(res.meta.warnings.some((w) => /price calendar/.test(w)));
+});
+
+test("Firecrawl's Google Flights results map to one-way flights", async () => {
+  const { gfToOneWay, parseCalendar } = await import("../providers/firecrawl");
+  const f = gfToOneWay(
+    {
+      price: { amount: 21, currency: "GBP" },
+      segments: [{ airline: "FR", flight_number: "3161", origin: "BRS", destination: "BCN", departure_local: "2026-11-30T07:15:00", arrival_local: "2026-11-30T10:25:00" }],
+    },
+    "out",
+    "BRS",
+    "BCN",
+    "https://www.google.com/travel/flights",
+  )!;
+  assert.equal(f.price, 21);
+  assert.equal(f.depart, "2026-11-30T07:15:00.000Z");
+  assert.equal(f.arrive, "2026-11-30T09:25:00.000Z");
+  assert.deepEqual(f.liveLeg?.flightNumbers, ["FR 3161"]);
+  assert.equal(parseCalendar({ days: [{ date: "2026-11-30", amount: 20.67 }, { date: "2026-12-01", amount: null }] }).size, 1);
+});

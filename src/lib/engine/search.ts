@@ -38,6 +38,7 @@ import type { DatePlan } from "./request";
 import { marketByCode, marketsToCheck } from "../markets";
 import { getRates } from "../rates";
 import { AIRPORTS_PER_LOOKUP, lookupsFor } from "../providers/serpapi";
+import type { DateRadar } from "../providers/firecrawl";
 import { placesForTrips } from "./places";
 import { destinationList, expandDates } from "./request";
 
@@ -294,7 +295,7 @@ interface Candidate {
 
 export async function runSearch(
   req: SearchRequest,
-  providers: { flights: FlightProvider; stays: StayProvider },
+  providers: { flights: FlightProvider; stays: StayProvider; radar?: DateRadar },
   /** Try nearby airports if nothing is found. Off for the widened retry itself. */
   allowWiden = true,
 ): Promise<SearchResponse> {
@@ -359,7 +360,9 @@ export async function runSearch(
       // Pairs of one-way tickets: often cheaper and better covered than returns,
       // and how out-of-one-airport, home-into-another trips are built.
       try {
-        flights = flights.concat(await mixedAirportTrips(group, airports, searchDestinations, plan, wantedPairs, providers.flights, flights));
+        flights = flights.concat(
+          await mixedAirportTrips(group, airports, searchDestinations, plan, wantedPairs, providers.flights, flights, providers.radar, warnings),
+        );
       } catch (err) {
         if (err instanceof SearchError) throw err;
         console.error("one-way search failed", err);
@@ -611,6 +614,25 @@ export async function runSearch(
 }
 
 /**
+ * Date pairs to check live, cheapest-looking first by the price calendar,
+ * adding pairs while the live lookups stay within the limit. Pairs that share
+ * dates with ones already chosen cost nothing extra, so they're kept too.
+ */
+export function pickCheapPairs(
+  pairs: string[][],
+  outDays: Map<string, number>,
+  backDays: Map<string, number>,
+  lookupsOf: (ps: string[][]) => number,
+  max: number,
+): string[][] {
+  const price = (m: Map<string, number>, d: string) => m.get(d) ?? Infinity;
+  const ranked = [...pairs].sort((a, b) => price(outDays, a[0]) + price(backDays, a[1]) - (price(outDays, b[0]) + price(backDays, b[1])));
+  const chosen: string[][] = [];
+  for (const p of ranked) if (lookupsOf([...chosen, p]) <= max) chosen.push(p);
+  return chosen;
+}
+
+/**
  * "Out from one airport, back into another" trips built from one-way fares,
  * e.g. out from Stansted when it's cheap, home into Bristol to save the long
  * trip back. Only checks the most promising destinations to keep API use down.
@@ -623,6 +645,8 @@ async function mixedAirportTrips(
   wantedPairs: Set<string>,
   provider: FlightProvider,
   roundTrips: FlightOption[],
+  radar?: DateRadar,
+  notes: string[] = [],
 ): Promise<FlightOption[]> {
   const people = group.adults + group.children;
   const cheapest = new Map<string, number>();
@@ -641,11 +665,25 @@ async function mixedAirportTrips(
     }
     return out;
   };
+  const mainAirport = (d: Destination) => destinationAirports(d.code)[0];
+  const until = addDays(plan.departTo, plan.maxNights);
+  // Live "anywhere" with the price calendar: rank places by their cheapest
+  // fare in the window, rather than just taking the nearest.
+  let ranked = destinations;
+  if (provider.live && radar && destinations.length > limit) {
+    const pool = destinations.slice(0, LIMITS.radarDestinations);
+    const best = await mapLimit(pool, 4, async (d) => {
+      const days = await radar.cheapestByDate([group.homeAirport], [mainAirport(d)], until).catch(() => new Map<string, number>());
+      const inWindow = [...days].filter(([date]) => date >= plan.departFrom && date <= plan.departTo).map(([, p]) => p);
+      return { d, price: inWindow.length ? Math.min(...inWindow) : Infinity };
+    });
+    ranked = best.sort((a, b) => a.price - b.price).map((x) => x.d);
+  }
   const dests =
     destinations.length <= limit
       ? destinations
       : provider.live
-        ? fitOneLookup(destinations)
+        ? fitOneLookup(ranked)
       : cheapest.size === 0
         ? destinations.slice(0, limit)
         : [...cheapest.entries()]
@@ -657,13 +695,31 @@ async function mixedAirportTrips(
   let outs: OneWayFlight[];
   let backs: OneWayFlight[];
   if (provider.searchOneWayDates) {
-    // Live: exact dates only, all airports in each lookup.
-    const pairs = [...wantedPairs].map((p) => p.split("|"));
+    // Live: exact dates only, as many airports per lookup as the source allows.
+    const per = provider.airportsPerLookup ?? AIRPORTS_PER_LOOKUP;
+    const homeBack = group.returnTo ? airports.filter((a) => a.code === group.returnTo) : airports;
+    const lookupsOf = (ps: string[][]) =>
+      lookupsFor({ airports, destinations: dests, dates: [...new Set(ps.map((p) => p[0]))] }, per) +
+      lookupsFor({ airports: homeBack, destinations: dests, dates: [...new Set(ps.map((p) => p[1]))] }, per);
+    let pairs = [...wantedPairs].map((p) => p.split("|"));
+    const all = pairs.length;
+    if (lookupsOf(pairs) > LIMITS.liveLookups && radar) {
+      // Too many dates to check live: use the price calendar to pick the
+      // cheapest-looking combinations, then check only those live.
+      const awayCodes = dests.map(mainAirport).slice(0, 3);
+      const homeCode = group.returnTo || group.homeAirport;
+      const [outDays, backDays] = await Promise.all([
+        radar.cheapestByDate([group.homeAirport], awayCodes, until).catch(() => new Map<string, number>()),
+        radar.cheapestByDate(awayCodes, [homeCode], until).catch(() => new Map<string, number>()),
+      ]);
+      if (outDays.size > 0 || backDays.size > 0) {
+        pairs = pickCheapPairs(pairs, outDays, backDays, lookupsOf, LIMITS.liveLookups);
+        if (pairs.length < all) notes.push(`Checked the ${pairs.length} cheapest-looking of ${all} date combinations live, chosen using Skyscanner's price calendar.`);
+      }
+    }
     const departs = [...new Set(pairs.map((p) => p[0]))].sort();
     const returns = [...new Set(pairs.map((p) => p[1]))].sort();
-    const homeBack = group.returnTo ? airports.filter((a) => a.code === group.returnTo) : airports;
-    const lookups =
-      lookupsFor({ airports, destinations: dests, dates: departs }) + lookupsFor({ airports: homeBack, destinations: dests, dates: returns });
+    const lookups = lookupsOf(pairs);
     if (lookups > LIMITS.liveLookups) {
       throw new SearchError(
         `Live prices are checked one date at a time, and this search needs ${lookups} checks (the most is ${LIMITS.liveLookups}). Try fewer dates or fewer places.`,
@@ -818,7 +874,7 @@ async function checkBookingCountries(trips: Trip[], req: SearchRequest, provider
 }
 
 function emptyResponse(
-  providers: { flights: FlightProvider; stays: StayProvider },
+  providers: { flights: FlightProvider; stays: StayProvider; radar?: DateRadar },
   warnings: string[],
   started: number,
   message: string,

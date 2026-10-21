@@ -164,9 +164,9 @@ async function sameFlightsElsewhere(key: string, flight: FlightOption, markets: 
 }
 
 /** How many lookups a live one-way search will spend. */
-export function lookupsFor(q: Pick<LiveOneWayQuery, "airports" | "destinations" | "dates">): number {
+export function lookupsFor(q: Pick<LiveOneWayQuery, "airports" | "destinations" | "dates">, perLookup = AIRPORTS_PER_LOOKUP): number {
   const destCodes = new Set(q.destinations.flatMap((d) => destinationAirports(d.code)));
-  return q.dates.length * Math.ceil(destCodes.size / AIRPORTS_PER_LOOKUP) * Math.ceil(q.airports.length / AIRPORTS_PER_LOOKUP);
+  return q.dates.length * Math.ceil(destCodes.size / perLookup) * Math.ceil(q.airports.length / perLookup);
 }
 
 export function serpapiFlights(key: string): FlightProvider {
@@ -175,6 +175,7 @@ export function serpapiFlights(key: string): FlightProvider {
     label: "Google Flights (live)",
     sample: false,
     live: true,
+    airportsPerLookup: AIRPORTS_PER_LOOKUP,
     // Return-ticket search across date ranges would cost a lookup per date
     // pair, so live searches are built from one-way tickets instead.
     async search() {

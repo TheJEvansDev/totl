@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAirport, getDestination } from "@/lib/data/places";
 import { addDays, todayUK } from "@/lib/dates";
+import { priceCalendar } from "@/lib/providers/firecrawl";
 import { googleHotels } from "@/lib/providers/googlehotels";
 import { liteapiStays } from "@/lib/providers/liteapi";
 import { lookup, serpapiFlights } from "@/lib/providers/serpapi";
@@ -139,15 +140,27 @@ async function checkHotels(key: string | undefined) {
   return out;
 }
 
+async function checkFirecrawl(key: string | undefined) {
+  if (!key) return { configured: false, note: "Add FIRECRAWL_API_KEY in Vercel to use Skyscanner's price calendar for choosing dates and places." };
+  try {
+    const days = await priceCalendar(key, "BRS", "BCN", addDays(todayUK(), 60));
+    const cheapest = [...days].sort((a, b) => a[1] - b[1])[0];
+    return { configured: true, source: "Skyscanner price calendar via Firecrawl (5 credits)", days: days.size, cheapest: cheapest ? { date: cheapest[0], price: cheapest[1] } : null };
+  } catch (e) {
+    return { configured: true, error: short(e) };
+  }
+}
+
 export async function GET(req: Request) {
   if (limited(req)) return NextResponse.json({ error: "Wait a minute before checking again." }, { status: 429 });
-  const [flights, hotels, rates] = await Promise.all([
+  const [flights, hotels, rates, firecrawl] = await Promise.all([
     checkFlights(process.env.SERPAPI_KEY?.trim()),
     process.env.SERPAPI_KEY?.trim() ? checkGoogleHotels(process.env.SERPAPI_KEY.trim()) : checkHotels(process.env.LITEAPI_KEY?.trim()),
     getRates().then((r) => ({ source: r.source, date: r.date, eurPerGbp: r.rates.EUR })).catch((e) => ({ error: short(e) })),
+    checkFirecrawl(process.env.FIRECRAWL_API_KEY?.trim()),
   ]);
   return NextResponse.json(
-    { checkedAt: new Date().toISOString(), flights, hotels, rates, ai: { configured: Boolean(process.env.ANTHROPIC_API_KEY) } },
+    { checkedAt: new Date().toISOString(), flights, hotels, firecrawl, rates, ai: { configured: Boolean(process.env.ANTHROPIC_API_KEY) } },
     { headers: { "cache-control": "no-store" } },
   );
 }

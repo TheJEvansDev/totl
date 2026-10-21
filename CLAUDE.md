@@ -30,6 +30,9 @@ The owner doesn't code: explain changes in plain British English, no em dashes.
   `SERPAPI_KEY` is set, else LiteAPI (live key needs business details), else
   sample. Live stays price `LIMITS.liveStayLookups` combos; the rest are scaled
   typical prices.
+  Firecrawl (`firecrawl.ts`, `FIRECRAWL_API_KEY`, 5 credits a call): Skyscanner
+  price calendar as a radar (`pickCheapPairs` narrows dates, ranks "anywhere"
+  places; never shown as prices), and live Google Flights as a backup source.
 - `src/lib/ai/plan.ts`: "Describe your trip" → structured search via Claude.
 - `src/lib/data/places.ts`: worldwide airports/cities (server only, from
   `world-airports.json`, rebuilt with `scripts/build-airports.py`), metro city

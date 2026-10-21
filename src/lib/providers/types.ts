@@ -53,6 +53,8 @@ export interface FlightProvider {
   sample: boolean;
   /** Live prices: every lookup costs, so searches use searchOneWayDates for exact dates. */
   live?: boolean;
+  /** Live: airport codes one lookup can cover on each side (SerpApi 7, others 1). */
+  airportsPerLookup?: number;
   searchOneWayDates?(q: LiveOneWayQuery): Promise<OneWayFlight[]>;
   /** Return-trip options from one origin to any of the destinations. */
   search(q: FlightQuery): Promise<FlightOption[]>;
